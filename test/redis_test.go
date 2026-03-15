@@ -16,6 +16,9 @@ func TestRedisConnection(t *testing.T) {
 	}
 	defer redis.Close()
 
+	// 清理测试数据
+	redis.Del("test_key", "test_queue")
+
 	// 测试SET/GET
 	testKey := "test_key"
 	testValue := map[string]string{"hello": "world"}
