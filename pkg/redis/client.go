@@ -9,6 +9,7 @@ import (
 )
 
 var Client *redis.Client
+var ctx = context.Background()
 
 func Init(cfg *config.RedisConfig) error {
 
@@ -20,7 +21,7 @@ func Init(cfg *config.RedisConfig) error {
 		PoolSize: 100,
 	})
 
-	if err := Client.Ping(context.Background()).Err(); err != nil {
+	if err := Client.Ping(ctx).Err(); err != nil {
 		return fmt.Errorf("Connect redis failed:%w", err)
 	}
 

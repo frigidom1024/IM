@@ -1,7 +1,6 @@
 package redis
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -17,12 +16,12 @@ func Push(queueName string, message any) error {
 
 	}
 
-	return Client.RPush(context.Background(), queueName, data).Err()
+	return Client.RPush(ctx, queueName, data).Err()
 }
 
 // Pop 从队列弹出消息（阻塞）
 func Pop(queueName string, timeout time.Duration) (string, error) {
-	result, err := Client.BRPop(context.Background(), timeout, queueName).Result()
+	result, err := Client.BRPop(ctx, timeout, queueName).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return "", nil
@@ -40,5 +39,5 @@ func Pop(queueName string, timeout time.Duration) (string, error) {
 
 // QueueSize 获取队列大小
 func QueueSize(queueName string) (int64, error) {
-	return Client.LLen(context.Background(), queueName).Result()
+	return Client.LLen(ctx, queueName).Result()
 }

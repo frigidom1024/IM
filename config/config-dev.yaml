@@ -6,9 +6,9 @@ server:
 
 mysql:
   host: localhost
-  port: 3306
+  port: 3309
   user: gochat
-  password: gochat123
+  password: gochat
   database: gochat
 
 redis:
