@@ -29,3 +29,9 @@ Thumbs.db
 
 # Config
 config/config-prod.yaml
+
+
+# Docker
+
+
+docker/mysql/data
