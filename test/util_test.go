@@ -47,7 +47,7 @@ func TestBcrypt(t *testing.T) {
 }
 
 func TestJwt(t *testing.T) {
-	token, err := util.GenerateToken("1", "test", 1)
+	token, err := util.GenerateToken(1, "test", 1)
 
 	if err != nil {
 
@@ -61,8 +61,8 @@ func TestJwt(t *testing.T) {
 	}
 
 	t.Logf("claims: %v", claims)
-	if claims.UserID != "1" {
-		t.Errorf("expected user ID 1, got %s", claims.UserID)
+	if claims.UserID != 1 {
+		t.Errorf("expected user ID 1, got %d", claims.UserID)
 	}
 	if claims.UserName != "test" {
 		t.Errorf("expected username test, got %s", claims.UserName)

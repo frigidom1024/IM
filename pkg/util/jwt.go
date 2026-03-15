@@ -14,12 +14,12 @@ func Init(secret string) {
 }
 
 type Claims struct {
-	UserID   string `json:"user_id"`
+	UserID   int    `json:"user_id"`
 	UserName string `json:"user_name"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(userID string, userName string, expireHours int) (string, error) {
+func GenerateToken(userID int, userName string, expireHours int) (string, error) {
 	if len(jwtSecret) == 0 {
 
 		return "", fmt.Errorf("jwt secret is empty")
