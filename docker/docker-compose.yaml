@@ -13,9 +13,16 @@ services:
       MYSQL_DATABASE: gochat
       MYSQL_USER: gochat
       MYSQL_PASSWORD: gochat
+      # 设置为 true 则自动导入测试数据
+      ENABLE_TEST_DATA: "true"
     volumes:
       - ./mysql/data:/var/lib/mysql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      # 01-init.sql: 表结构初始化（必需）
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      # 02-testdata.sql: 测试数据（可选，通过 ENABLE_TEST_DATA 控制）
+      - ./testdata.sql:/docker-entrypoint-initdb.d/02-testdata.sql:ro
+      # init.sh: 自定义初始化脚本
+      - ./init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
     command: --default-authentication-plugin=mysql_native_password
     networks:
       - gochat-network
