@@ -201,3 +201,30 @@ func (m *WsMsg) GetAuthData() (*AuthData, error) {
 	}
 	return nil, ErrInvalidDataType
 }
+
+// GetData 获取原始数据
+func (m *WsMsg) GetData() (any, error) {
+	return m.Data, nil
+}
+
+// Validate 验证聊天消息数据
+func (c *ChatMsgData) Validate() error {
+	if c.FromID <= 0 {
+		return ErrInvalidFromID
+	}
+	if c.Type < 1 || c.Type > 4 {
+		return ErrInvalidMsgType
+	}
+	if c.Content == "" {
+		return ErrEmptyContent
+	}
+	// 私聊和群聊互斥
+	if c.ToID > 0 && c.GroupID > 0 {
+		return ErrInvalidTarget
+	}
+	// 必须指定接收方
+	if c.ToID == 0 && c.GroupID == 0 {
+		return ErrInvalidTarget
+	}
+	return nil
+}
