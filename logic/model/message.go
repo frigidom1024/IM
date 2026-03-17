@@ -2,8 +2,6 @@ package model
 
 import (
 	"time"
-
-	"gochat/pkg/mysql"
 )
 
 // MessageType 消息类型
@@ -29,58 +27,4 @@ type Message struct {
 // TableName 指定表名
 func (Message) TableName() string {
 	return "message"
-}
-
-// CreateMessage 创建消息
-func CreateMessage(msg *Message) error {
-	return mysql.Client.Create(msg).Error
-}
-
-// GetMessageByID 根据ID获取消息
-func GetMessageByID(id int64) (*Message, error) {
-	var msg Message
-	err := mysql.Client.Where("id = ?", id).First(&msg).Error
-	if err != nil {
-		return nil, err
-	}
-	return &msg, nil
-}
-
-// GetPrivateMessages 获取私聊消息
-func GetPrivateMessages(userID1, userID2 int64, limit int, offset int64) ([]*Message, error) {
-	var messages []*Message
-	err := mysql.Client.Where("(from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)",
-		userID1, userID2, userID2, userID1).
-		Order("created_at DESC").
-		Limit(limit).
-		Offset(int(offset)).
-		Find(&messages).Error
-	return messages, err
-}
-
-// GetGroupMessages 获取群聊消息
-func GetGroupMessages(groupID int64, limit int, offset int64) ([]*Message, error) {
-	var messages []*Message
-	err := mysql.Client.Where("group_id = ?", groupID).
-		Order("created_at DESC").
-		Limit(limit).
-		Offset(int(offset)).
-		Find(&messages).Error
-	return messages, err
-}
-
-// RevokeMessage 撤回消息
-func RevokeMessage(id int64) error {
-	return mysql.Client.Model(&Message{}).Where("id = ?", id).Update("is_revoked", true).Error
-}
-
-// GetUserMessages 获取用户发送的消息
-func GetUserMessages(userID int64, limit int, offset int64) ([]*Message, error) {
-	var messages []*Message
-	err := mysql.Client.Where("from_id = ?", userID).
-		Order("created_at DESC").
-		Limit(limit).
-		Offset(int(offset)).
-		Find(&messages).Error
-	return messages, err
 }
