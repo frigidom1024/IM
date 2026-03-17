@@ -4,6 +4,7 @@ go 1.25.7
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.18.0
 	go.etcd.io/etcd/client/v3 v3.6.8
 	go.uber.org/zap v1.27.1
