@@ -3,9 +3,10 @@ package unit_test
 import (
 	"testing"
 
+	"gochat/logic/model"
+	"gochat/logic/registry"
 	"gochat/pkg/config"
 	"gochat/pkg/mysql"
-	"gochat/logic/model"
 )
 
 func TestUserModel(t *testing.T) {
@@ -15,6 +16,9 @@ func TestUserModel(t *testing.T) {
 		t.Fatalf("init mysql failed: %v", err)
 	}
 	defer mysql.Close()
+
+	// 创建仓储实例
+	userRepo := registry.NewUserRepository()
 
 	// 清理测试数据
 	mysql.Client.Where("username = ?", "test_user_model").Delete(&model.User{})
@@ -27,7 +31,7 @@ func TestUserModel(t *testing.T) {
 		Status:   0,
 	}
 
-	if err := model.CreateUser(user); err != nil {
+	if err := userRepo.Create(user); err != nil {
 		t.Fatalf("create user failed: %v", err)
 	}
 
@@ -38,7 +42,7 @@ func TestUserModel(t *testing.T) {
 	t.Logf("Created user with ID: %d", user.ID)
 
 	// 测试查询用户
-	found, err := model.GetUserByUsername("test_user_model")
+	found, err := userRepo.GetByUsername("test_user_model")
 	if err != nil {
 		t.Fatalf("get user failed: %v", err)
 	}
@@ -48,12 +52,12 @@ func TestUserModel(t *testing.T) {
 	}
 
 	// 测试更新状态
-	if err := model.UpdateUserStatus(user.ID, 1); err != nil {
+	if err := userRepo.UpdateStatus(user.ID, 1); err != nil {
 		t.Fatalf("update status failed: %v", err)
 	}
 
 	// 验证状态更新
-	updated, err := model.GetUserByID(user.ID)
+	updated, err := userRepo.GetByID(user.ID)
 	if err != nil {
 		t.Fatalf("get updated user failed: %v", err)
 	}
@@ -63,12 +67,12 @@ func TestUserModel(t *testing.T) {
 	}
 
 	// 测试更新资料
-	if err := model.UpdateUserProfile(user.ID, "新昵称", ""); err != nil {
+	if err := userRepo.UpdateProfile(user.ID, "新昵称", ""); err != nil {
 		t.Fatalf("update profile failed: %v", err)
 	}
 
 	// 验证资料更新
-	updated, err = model.GetUserByID(user.ID)
+	updated, err = userRepo.GetByID(user.ID)
 	if err != nil {
 		t.Fatalf("get updated user failed: %v", err)
 	}

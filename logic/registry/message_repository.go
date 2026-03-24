@@ -13,6 +13,7 @@ type MessageRepository interface {
 	GetGroupMessages(groupID int64, limit int, offset int64) ([]*model.Message, error)
 	Revoke(id int64) error
 	GetByUserID(userID int64, limit int, offset int64) ([]*model.Message, error)
+	GetUnreadMessages(userID int64, limit int) ([]*model.Message, error)
 }
 
 // messageRepository 消息仓储默认实现
@@ -73,6 +74,16 @@ func (r *messageRepository) GetByUserID(userID int64, limit int, offset int64) (
 		Order("created_at DESC").
 		Limit(limit).
 		Offset(int(offset)).
+		Find(&messages).Error
+	return messages, err
+}
+
+// GetUnreadMessages 获取用户未读消息
+func (r *messageRepository) GetUnreadMessages(userID int64, limit int) ([]*model.Message, error) {
+	var messages []*model.Message
+	err := mysql.Client.Where("to_id = ? AND id NOT IN (SELECT message_id FROM message_read WHERE user_id = ?)", userID, userID).
+		Order("created_at DESC").
+		Limit(limit).
 		Find(&messages).Error
 	return messages, err
 }

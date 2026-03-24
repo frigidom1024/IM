@@ -3,9 +3,10 @@ package unit_test
 import (
 	"testing"
 
+	"gochat/logic/model"
+	"gochat/logic/registry"
 	"gochat/pkg/config"
 	"gochat/pkg/mysql"
-	"gochat/logic/model"
 )
 
 // 使用测试数据中的群组和成员
@@ -22,11 +23,14 @@ func TestGroupMemberModel(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	groupMemberRepo := registry.NewGroupMemberRepository()
+
 	// 使用测试数据中的群组 (开发团队=1)
 	groupID := int64(1)
 
 	// 测试获取群成员列表
-	members, err := model.GetGroupMembers(groupID)
+	members, err := groupMemberRepo.GetByGroupID(groupID)
 	if err != nil {
 		t.Fatalf("get group members failed: %v", err)
 	}
@@ -38,7 +42,7 @@ func TestGroupMemberModel(t *testing.T) {
 
 	// 测试获取特定群成员 (alice=2)
 	userID := int64(2)
-	found, err := model.GetGroupMember(groupID, userID)
+	found, err := groupMemberRepo.Get(groupID, userID)
 	if err != nil {
 		t.Fatalf("get group member failed: %v", err)
 	}
@@ -49,7 +53,7 @@ func TestGroupMemberModel(t *testing.T) {
 	}
 
 	// 测试是否是群成员
-	isMember, err := model.IsGroupMember(groupID, userID)
+	isMember, err := groupMemberRepo.IsMember(groupID, userID)
 	if err != nil {
 		t.Fatalf("check is member failed: %v", err)
 	}
@@ -59,7 +63,7 @@ func TestGroupMemberModel(t *testing.T) {
 	}
 
 	// 测试获取群成员数量
-	count, err := model.GetGroupMemberCount(groupID)
+	count, err := groupMemberRepo.GetCount(groupID)
 	if err != nil {
 		t.Fatalf("get member count failed: %v", err)
 	}
@@ -70,12 +74,12 @@ func TestGroupMemberModel(t *testing.T) {
 
 	// 测试更新成员角色 (bob=3 是管理员，改为普通成员)
 	bobID := int64(3)
-	if err := model.UpdateMemberRole(groupID, bobID, model.RoleMember); err != nil {
+	if err := groupMemberRepo.UpdateRole(groupID, bobID, model.RoleMember); err != nil {
 		t.Fatalf("update member role failed: %v", err)
 	}
 
 	// 验证角色更新
-	updated, err := model.GetGroupMember(groupID, bobID)
+	updated, err := groupMemberRepo.Get(groupID, bobID)
 	if err != nil {
 		t.Fatalf("get updated member failed: %v", err)
 	}
@@ -85,7 +89,7 @@ func TestGroupMemberModel(t *testing.T) {
 	}
 
 	// 恢复角色
-	model.UpdateMemberRole(groupID, bobID, model.RoleAdmin)
+	groupMemberRepo.UpdateRole(groupID, bobID, model.RoleAdmin)
 
 	t.Log("GroupMember model test passed")
 }
@@ -98,13 +102,17 @@ func TestGroupMemberAddAndRemove(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	groupRepo := registry.NewGroupRepository()
+	groupMemberRepo := registry.NewGroupMemberRepository()
+
 	// 创建测试群组
 	group := &model.Group{
 		Name:    "临时测试群",
 		OwnerID: 7, // frank
 	}
 
-	if err := model.CreateGroup(group); err != nil {
+	if err := groupRepo.Create(group); err != nil {
 		t.Fatalf("create group failed: %v", err)
 	}
 	defer func() {
@@ -119,7 +127,7 @@ func TestGroupMemberAddAndRemove(t *testing.T) {
 		Role:    model.RoleOwner,
 	}
 
-	if err := model.AddGroupMember(ownerMember); err != nil {
+	if err := groupMemberRepo.Add(ownerMember); err != nil {
 		t.Fatalf("add owner member failed: %v", err)
 	}
 
@@ -130,25 +138,25 @@ func TestGroupMemberAddAndRemove(t *testing.T) {
 		Role:    model.RoleMember,
 	}
 
-	if err := model.AddGroupMember(userMember); err != nil {
+	if err := groupMemberRepo.Add(userMember); err != nil {
 		t.Fatalf("add member failed: %v", err)
 	}
 
 	t.Logf("Added group members, group ID: %d", group.ID)
 
 	// 验证成员数量
-	count, _ := model.GetGroupMemberCount(group.ID)
+	count, _ := groupMemberRepo.GetCount(group.ID)
 	if count != 2 {
 		t.Errorf("expected 2 members, got %d", count)
 	}
 
 	// 测试移除群成员
-	if err := model.RemoveGroupMember(group.ID, 8); err != nil {
+	if err := groupMemberRepo.Remove(group.ID, 8); err != nil {
 		t.Fatalf("remove member failed: %v", err)
 	}
 
 	// 验证移除
-	isMember, err := model.IsGroupMember(group.ID, 8)
+	isMember, err := groupMemberRepo.IsMember(group.ID, 8)
 	if err != nil {
 		t.Fatalf("check is member after remove failed: %v", err)
 	}
@@ -158,7 +166,7 @@ func TestGroupMemberAddAndRemove(t *testing.T) {
 	}
 
 	// 验证成员数量更新
-	count, err = model.GetGroupMemberCount(group.ID)
+	count, err = groupMemberRepo.GetCount(group.ID)
 	if err != nil {
 		t.Fatalf("get member count after remove failed: %v", err)
 	}
@@ -178,12 +186,15 @@ func TestGroupMemberGetUserGroups(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	groupMemberRepo := registry.NewGroupMemberRepository()
+
 	// 使用测试数据中的用户 (alice=2)
 	// alice 参加了 3 个群组: 开发团队(owner), 产品讨论组(admin), 周末约饭群
 	userID := int64(2)
 
 	// 测试获取用户加入的群组
-	userGroups, err := model.GetUserGroups(userID)
+	userGroups, err := groupMemberRepo.GetByUserID(userID)
 	if err != nil {
 		t.Fatalf("get user groups failed: %v", err)
 	}

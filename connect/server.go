@@ -1,6 +1,7 @@
 package connect
 
 import (
+	"context"
 	"gochat/pkg/logger"
 	"gochat/pkg/util"
 	"net/http"
@@ -32,22 +33,20 @@ type WsConnServer struct {
 	// 用户ID到连接的映射（并发安全）
 	conns sync.Map // string(userID) -> *wsConnection
 
-	// 事件回调（支持多个）
-	messageHandlers    []func(userID string, msg *WsMsg)
-	connectHandlers    []func(userID string)
-	disconnectHandlers []func(userID string)
-
-	// 用于在Handler回调中保护handlers的读写
-	handlersMu sync.RWMutex
+	// 处理器注册表
+	registry *HandlerRegistry
 }
 
 // NewWsConnServer 创建新的WebSocket服务器
 func NewWsConnServer() *WsConnServer {
 	return &WsConnServer{
-		messageHandlers:    make([]func(userID string, msg *WsMsg), 0),
-		connectHandlers:    make([]func(userID string), 0),
-		disconnectHandlers: make([]func(userID string), 0),
+		registry: NewHandlerRegistry(),
 	}
+}
+
+// Registry 获取处理器注册表
+func (s *WsConnServer) Registry() *HandlerRegistry {
+	return s.registry
 }
 
 // HandleWebSocket 处理WebSocket连接请求
@@ -104,12 +103,8 @@ func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	logger.Info("用户连接成功", zap.String("userID", userID))
 
 	// 触发连接回调
-	s.handlersMu.RLock()
-	handlers := s.connectHandlers
-	s.handlersMu.RUnlock()
-	for _, handler := range handlers {
-		go handler(userID)
-	}
+	ctx := context.Background()
+	s.registry.HandleConnect(ctx, userID)
 
 	// 启动读写goroutine
 	go wsConn.readPump()
@@ -189,25 +184,10 @@ func (s *WsConnServer) IsOnline(userID string) bool {
 	return ok
 }
 
-// OnMessage 注册消息接收回调
-func (s *WsConnServer) OnMessage(fn func(userID string, msg *WsMsg)) {
-	s.handlersMu.Lock()
-	defer s.handlersMu.Unlock()
-	s.messageHandlers = append(s.messageHandlers, fn)
-}
-
-// OnConnect 注册用户连接回调
-func (s *WsConnServer) OnConnect(fn func(userID string)) {
-	s.handlersMu.Lock()
-	defer s.handlersMu.Unlock()
-	s.connectHandlers = append(s.connectHandlers, fn)
-}
-
-// OnDisconnect 注册用户断开回调
-func (s *WsConnServer) OnDisconnect(fn func(userID string)) {
-	s.handlersMu.Lock()
-	defer s.handlersMu.Unlock()
-	s.disconnectHandlers = append(s.disconnectHandlers, fn)
+// SendOfflineNotify 发送离线通知给用户
+func (s *WsConnServer) SendOfflineNotify(userID string, notifyData *OfflineNotifyData) error {
+	notifyMsg := NewWsMsg(CmdOfflineNotify, "", notifyData)
+	return s.Send(userID, notifyMsg)
 }
 
 // Close 关闭连接
@@ -224,12 +204,8 @@ func (c *wsConnection) Close() error {
 		close(c.send)
 
 		// 触发断开回调
-		c.server.handlersMu.RLock()
-		handlers := c.server.disconnectHandlers
-		c.server.handlersMu.RUnlock()
-		for _, handler := range handlers {
-			go handler(c.userID)
-		}
+		ctx := context.Background()
+		c.server.registry.HandleDisconnect(ctx, c.userID)
 	})
 	return err
 }
@@ -239,6 +215,13 @@ func (c *wsConnection) readPump() {
 	defer c.Close()
 
 	c.conn.SetReadLimit(512)
+	// 设置读取超时，用于检测空闲连接
+	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	// 重置读取超时的pong处理器
+	c.conn.SetPongHandler(func(string) error {
+		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
 
 	for {
 		_, message, err := c.conn.ReadMessage()
@@ -261,12 +244,8 @@ func (c *wsConnection) readPump() {
 			zap.String("cmd", wsMsg.Cmd))
 
 		// 触发消息回调
-		c.server.handlersMu.RLock()
-		handlers := c.server.messageHandlers
-		c.server.handlersMu.RUnlock()
-		for _, handler := range handlers {
-			go handler(c.userID, wsMsg)
-		}
+		ctx := context.Background()
+		c.server.registry.HandleMessage(ctx, c.userID, wsMsg)
 	}
 }
 

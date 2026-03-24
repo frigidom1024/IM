@@ -3,9 +3,10 @@ package unit_test
 import (
 	"testing"
 
+	"gochat/logic/model"
+	"gochat/logic/registry"
 	"gochat/pkg/config"
 	"gochat/pkg/mysql"
-	"gochat/logic/model"
 )
 
 // 使用测试数据中的群组
@@ -20,11 +21,14 @@ func TestGroupModel(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	groupRepo := registry.NewGroupRepository()
+
 	// 使用测试数据中的群组 (开发团队=1, owner=alice=2)
 	groupID := int64(1)
 
 	// 测试获取群组
-	found, err := model.GetGroupByID(groupID)
+	found, err := groupRepo.GetByID(groupID)
 	if err != nil {
 		t.Fatalf("get group failed: %v", err)
 	}
@@ -38,7 +42,7 @@ func TestGroupModel(t *testing.T) {
 	}
 
 	// 测试获取用户拥有的群组 (alice=2)
-	groups, err := model.GetGroupsByOwner(2)
+	groups, err := groupRepo.GetByOwnerID(2)
 	if err != nil {
 		t.Fatalf("get groups by owner failed: %v", err)
 	}
@@ -49,12 +53,12 @@ func TestGroupModel(t *testing.T) {
 
 	// 测试更新群组
 	originalName := found.Name
-	if err := model.UpdateGroup(groupID, "更新后的群名", found.Avatar); err != nil {
+	if err := groupRepo.Update(groupID, "更新后的群名", found.Avatar); err != nil {
 		t.Fatalf("update group failed: %v", err)
 	}
 
 	// 验证更新
-	updated, err := model.GetGroupByID(groupID)
+	updated, err := groupRepo.GetByID(groupID)
 	if err != nil {
 		t.Fatalf("get updated group failed: %v", err)
 	}
@@ -64,7 +68,7 @@ func TestGroupModel(t *testing.T) {
 	}
 
 	// 恢复原名称
-	model.UpdateGroup(groupID, originalName, found.Avatar)
+	groupRepo.Update(groupID, originalName, found.Avatar)
 
 	t.Log("Group model test passed")
 }
@@ -77,6 +81,9 @@ func TestGroupModelCreateAndDelete(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	groupRepo := registry.NewGroupRepository()
+
 	// 使用测试数据中的用户 (frank=7)
 	ownerID := int64(7)
 
@@ -88,7 +95,7 @@ func TestGroupModelCreateAndDelete(t *testing.T) {
 		MaxMembers: 100,
 	}
 
-	if err := model.CreateGroup(group); err != nil {
+	if err := groupRepo.Create(group); err != nil {
 		t.Fatalf("create group failed: %v", err)
 	}
 
@@ -104,7 +111,7 @@ func TestGroupModelCreateAndDelete(t *testing.T) {
 	t.Logf("Created group with ID: %d", group.ID)
 
 	// 验证创建
-	found, err := model.GetGroupByID(group.ID)
+	found, err := groupRepo.GetByID(group.ID)
 	if err != nil {
 		t.Fatalf("get created group failed: %v", err)
 	}
@@ -114,12 +121,12 @@ func TestGroupModelCreateAndDelete(t *testing.T) {
 	}
 
 	// 测试删除群组
-	if err := model.DeleteGroup(group.ID); err != nil {
+	if err := groupRepo.Delete(group.ID); err != nil {
 		t.Fatalf("delete group failed: %v", err)
 	}
 
 	// 验证删除
-	_, err = model.GetGroupByID(group.ID)
+	_, err = groupRepo.GetByID(group.ID)
 	if err == nil {
 		t.Error("expected error when getting deleted group")
 	}
@@ -135,13 +142,16 @@ func TestGroupTransfer(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	groupRepo := registry.NewGroupRepository()
+
 	// 创建测试群组
 	group := &model.Group{
 		Name:    "待转让群组",
 		OwnerID: 7, // frank
 	}
 
-	if err := model.CreateGroup(group); err != nil {
+	if err := groupRepo.Create(group); err != nil {
 		t.Fatalf("create group failed: %v", err)
 	}
 	defer func() {
@@ -154,12 +164,12 @@ func TestGroupTransfer(t *testing.T) {
 	newOwnerID := int64(8) // grace
 
 	// 测试转让群组
-	if err := model.TransferGroup(group.ID, newOwnerID); err != nil {
+	if err := groupRepo.TransferOwnership(group.ID, newOwnerID); err != nil {
 		t.Fatalf("transfer group failed: %v", err)
 	}
 
 	// 验证转让
-	updated, err := model.GetGroupByID(group.ID)
+	updated, err := groupRepo.GetByID(group.ID)
 	if err != nil {
 		t.Fatalf("get updated group failed: %v", err)
 	}
@@ -169,7 +179,7 @@ func TestGroupTransfer(t *testing.T) {
 	}
 
 	// 恢复原群主
-	model.TransferGroup(group.ID, oldOwnerID)
+	groupRepo.TransferOwnership(group.ID, oldOwnerID)
 
 	t.Log("Group transfer test passed")
 }

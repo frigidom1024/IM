@@ -3,10 +3,11 @@ package unit_test
 import (
 	"testing"
 
+	"gochat/logic/model"
+	"gochat/logic/registry"
+	"gochat/logic/service"
 	"gochat/pkg/config"
 	"gochat/pkg/mysql"
-	"gochat/logic/model"
-	"gochat/logic/dbService"
 )
 
 func TestUserService(t *testing.T) {
@@ -17,17 +18,21 @@ func TestUserService(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建服务实例
+	userRepo := registry.NewUserRepository()
+	userService := service.NewUserService(userRepo)
+
 	// 清理测试数据
 	mysql.Client.Where("username = ?", "test_service_user").Delete(&model.User{})
 
 	// 测试注册
-	registerReq := &dbService.RegisterReq{
+	registerReq := &service.RegisterReq{
 		Username: "test_service_user",
 		Password: "123456",
 		Nickname: "服务测试用户",
 	}
 
-	userRes, err := dbService.Register(registerReq)
+	userRes, err := userService.Register(registerReq)
 	if err != nil {
 		t.Fatalf("register failed: %v", err)
 	}
@@ -43,19 +48,19 @@ func TestUserService(t *testing.T) {
 	t.Logf("Registered user: ID=%d, Username=%s", userRes.ID, userRes.Username)
 
 	// 测试重复注册
-	_, err = dbService.Register(registerReq)
+	_, err = userService.Register(registerReq)
 	if err == nil {
 		t.Error("register should fail for duplicate username")
 	}
 	t.Logf("Expected duplicate registration error: %v", err)
 
 	// 测试登录
-	loginReq := &dbService.LoginReq{
+	loginReq := &service.LoginReq{
 		Username: "test_service_user",
 		Password: "123456",
 	}
 
-	loginRes, token, err := dbService.Login(loginReq)
+	loginRes, token, err := userService.Login(loginReq)
 	if err != nil {
 		t.Fatalf("login failed: %v", err)
 	}
@@ -71,7 +76,7 @@ func TestUserService(t *testing.T) {
 	t.Logf("Login successful: token=%s", token[:20]+"...")
 
 	// 测试获取用户信息
-	userInfo, err := dbService.GetUserInfo(userRes.ID)
+	userInfo, err := userService.GetUserInfo(userRes.ID)
 	if err != nil {
 		t.Fatalf("get user info failed: %v", err)
 	}
@@ -81,13 +86,13 @@ func TestUserService(t *testing.T) {
 	}
 
 	// 测试更新资料
-	err = dbService.UpdateProfile(userRes.ID, "新昵称", "")
+	err = userService.UpdateProfile(userRes.ID, "新昵称", "")
 	if err != nil {
 		t.Fatalf("update profile failed: %v", err)
 	}
 
 	// 验证更新
-	updated, err := dbService.GetUserInfo(userRes.ID)
+	updated, err := userService.GetUserInfo(userRes.ID)
 	if err != nil {
 		t.Fatalf("get updated user failed: %v", err)
 	}
@@ -97,37 +102,37 @@ func TestUserService(t *testing.T) {
 	}
 
 	// 测试错误密码登录
-	wrongReq := &dbService.LoginReq{
+	wrongReq := &service.LoginReq{
 		Username: "test_service_user",
 		Password: "wrongpassword",
 	}
 
-	_, _, err = dbService.Login(wrongReq)
+	_, _, err = userService.Login(wrongReq)
 	if err == nil {
 		t.Error("login should fail with wrong password")
 	}
 	t.Logf("Expected wrong password error: %v", err)
 
 	// 测试不存在的用户登录
-	notExistReq := &dbService.LoginReq{
+	notExistReq := &service.LoginReq{
 		Username: "notexist_user",
 		Password: "123456",
 	}
 
-	_, _, err = dbService.Login(notExistReq)
+	_, _, err = userService.Login(notExistReq)
 	if err == nil {
 		t.Error("login should fail for non-existent user")
 	}
 	t.Logf("Expected user not exists error: %v", err)
 
 	// 测试更新状态
-	err = dbService.UpdateStatus(userRes.ID, 2)
+	err = userService.UpdateStatus(userRes.ID, 2)
 	if err != nil {
 		t.Fatalf("update status failed: %v", err)
 	}
 
 	// 验证状态更新
-	updated, err = dbService.GetUserInfo(userRes.ID)
+	updated, err = userService.GetUserInfo(userRes.ID)
 	if err != nil {
 		t.Fatalf("get updated user failed: %v", err)
 	}

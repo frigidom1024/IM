@@ -3,10 +3,11 @@ package unit_test
 import (
 	"testing"
 
+	"gochat/logic/model"
+	"gochat/logic/registry"
 	"gochat/pkg/config"
 	"gochat/pkg/mysql"
 	"gochat/pkg/snowflake"
-	"gochat/logic/model"
 )
 
 // 使用测试数据中的消息
@@ -24,9 +25,12 @@ func TestMessageModel(t *testing.T) {
 	snowflake.Init(1, 1)
 	defer mysql.Close()
 
+	// 创建仓储实例
+	msgRepo := registry.NewMessageRepository()
+
 	// 测试获取已存在的消息
 	messageID := int64(1000000000000000001) // alice -> bob 的私聊
-	found, err := model.GetMessageByID(messageID)
+	found, err := msgRepo.GetByID(messageID)
 	if err != nil {
 		t.Fatalf("get message failed: %v", err)
 	}
@@ -55,6 +59,9 @@ func TestMessageCreateAndRevoke(t *testing.T) {
 	snowflake.Init(1, 1)
 	defer mysql.Close()
 
+	// 创建仓储实例
+	msgRepo := registry.NewMessageRepository()
+
 	// 创建测试消息
 	msg := &model.Message{
 		ID:      snowflake.MustNextID(),
@@ -65,7 +72,7 @@ func TestMessageCreateAndRevoke(t *testing.T) {
 		Content: "这是一条测试消息",
 	}
 
-	if err := model.CreateMessage(msg); err != nil {
+	if err := msgRepo.Create(msg); err != nil {
 		t.Fatalf("create message failed: %v", err)
 	}
 
@@ -77,7 +84,7 @@ func TestMessageCreateAndRevoke(t *testing.T) {
 	t.Logf("Created message with ID: %d", msg.ID)
 
 	// 验证创建
-	found, err := model.GetMessageByID(msg.ID)
+	found, err := msgRepo.GetByID(msg.ID)
 	if err != nil {
 		t.Fatalf("get message failed: %v", err)
 	}
@@ -87,12 +94,12 @@ func TestMessageCreateAndRevoke(t *testing.T) {
 	}
 
 	// 测试撤回消息
-	if err := model.RevokeMessage(msg.ID); err != nil {
+	if err := msgRepo.Revoke(msg.ID); err != nil {
 		t.Fatalf("revoke message failed: %v", err)
 	}
 
 	// 验证撤回
-	revoked, err := model.GetMessageByID(msg.ID)
+	revoked, err := msgRepo.GetByID(msg.ID)
 	if err != nil {
 		t.Fatalf("get revoked message failed: %v", err)
 	}
@@ -112,11 +119,14 @@ func TestPrivateMessages(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	msgRepo := registry.NewMessageRepository()
+
 	// 测试获取 alice 和 bob 的私聊消息
 	userID1 := int64(2) // alice
 	userID2 := int64(3) // bob
 
-	messages, err := model.GetPrivateMessages(userID1, userID2, 10, 0)
+	messages, err := msgRepo.GetPrivateMessages(userID1, userID2, 10, 0)
 	if err != nil {
 		t.Fatalf("get private messages failed: %v", err)
 	}
@@ -142,10 +152,13 @@ func TestGroupMessages(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	msgRepo := registry.NewMessageRepository()
+
 	// 测试获取开发团队的消息 (group_id=1)
 	groupID := int64(1)
 
-	messages, err := model.GetGroupMessages(groupID, 10, 0)
+	messages, err := msgRepo.GetGroupMessages(groupID, 10, 0)
 	if err != nil {
 		t.Fatalf("get group messages failed: %v", err)
 	}
@@ -179,6 +192,9 @@ func TestMessageTypes(t *testing.T) {
 	snowflake.Init(1, 1)
 	defer mysql.Close()
 
+	// 创建仓储实例
+	msgRepo := registry.NewMessageRepository()
+
 	// 测试不同类型的消息
 	messageTypes := []struct {
 		msgType  int8
@@ -208,11 +224,11 @@ func TestMessageTypes(t *testing.T) {
 			Content: mt.content,
 		}
 
-		if err := model.CreateMessage(msg); err != nil {
+		if err := msgRepo.Create(msg); err != nil {
 			t.Fatalf("create %d message failed: %v", mt.msgType, err)
 		}
 
-		found, err := model.GetMessageByID(msg.ID)
+		found, err := msgRepo.GetByID(msg.ID)
 		if err != nil {
 			t.Fatalf("get %d message failed: %v", mt.msgType, err)
 		}

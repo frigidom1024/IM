@@ -3,9 +3,10 @@ package unit_test
 import (
 	"testing"
 
+	"gochat/logic/model"
+	"gochat/logic/registry"
 	"gochat/pkg/config"
 	"gochat/pkg/mysql"
-	"gochat/logic/model"
 )
 
 // 使用测试数据中的用户ID
@@ -21,6 +22,9 @@ func TestFriendModel(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	friendRepo := registry.NewFriendRepository()
+
 	// 使用测试数据中的用户 (frank=7, grace=8)
 	userID := int64(7)  // frank
 	friendID := int64(8) // grace
@@ -32,7 +36,7 @@ func TestFriendModel(t *testing.T) {
 	}()
 
 	// 测试前验证：frank 应该没有好友 grace
-	isFriend, _ := model.IsFriend(userID, friendID)
+	isFriend, _ := friendRepo.IsFriend(userID, friendID)
 	if isFriend {
 		t.Skip("frank and grace are already friends, skipping test")
 		return
@@ -45,7 +49,7 @@ func TestFriendModel(t *testing.T) {
 		Remark:   "测试好友",
 	}
 
-	if err := model.CreateFriend(friend); err != nil {
+	if err := friendRepo.Create(friend); err != nil {
 		t.Fatalf("create friend failed: %v", err)
 	}
 
@@ -56,7 +60,7 @@ func TestFriendModel(t *testing.T) {
 	t.Logf("Created friend relationship with ID: %d", friend.ID)
 
 	// 测试获取好友列表
-	friends, err := model.GetFriends(userID)
+	friends, err := friendRepo.GetByUserID(userID)
 	if err != nil {
 		t.Fatalf("get friends failed: %v", err)
 	}
@@ -67,7 +71,7 @@ func TestFriendModel(t *testing.T) {
 	}
 
 	// 测试获取特定好友关系
-	found, err := model.GetFriend(userID, friendID)
+	found, err := friendRepo.Get(userID, friendID)
 	if err != nil {
 		t.Fatalf("get friend failed: %v", err)
 	}
@@ -77,7 +81,7 @@ func TestFriendModel(t *testing.T) {
 	}
 
 	// 测试是否是好友
-	isFriend, err = model.IsFriend(userID, friendID)
+	isFriend, err = friendRepo.IsFriend(userID, friendID)
 	if err != nil {
 		t.Fatalf("check is friend failed: %v", err)
 	}
@@ -87,12 +91,12 @@ func TestFriendModel(t *testing.T) {
 	}
 
 	// 测试更新备注
-	if err := model.UpdateFriendRemark(userID, friendID, "更新备注"); err != nil {
+	if err := friendRepo.UpdateRemark(userID, friendID, "更新备注"); err != nil {
 		t.Fatalf("update friend remark failed: %v", err)
 	}
 
 	// 验证备注更新
-	updated, err := model.GetFriend(userID, friendID)
+	updated, err := friendRepo.Get(userID, friendID)
 	if err != nil {
 		t.Fatalf("get updated friend failed: %v", err)
 	}
@@ -102,12 +106,12 @@ func TestFriendModel(t *testing.T) {
 	}
 
 	// 测试删除好友
-	if err := model.DeleteFriend(userID, friendID); err != nil {
+	if err := friendRepo.Delete(userID, friendID); err != nil {
 		t.Fatalf("delete friend failed: %v", err)
 	}
 
 	// 验证删除
-	isFriend, err = model.IsFriend(userID, friendID)
+	isFriend, err = friendRepo.IsFriend(userID, friendID)
 	if err != nil {
 		t.Fatalf("check is friend after delete failed: %v", err)
 	}
@@ -127,12 +131,15 @@ func TestFriendModelQueryExisting(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	friendRepo := registry.NewFriendRepository()
+
 	// 测试查询已有的好友关系 (alice=2, bob=3)
 	userID := int64(2)  // alice
 	friendID := int64(3) // bob
 
 	// 测试获取好友列表
-	friends, err := model.GetFriends(userID)
+	friends, err := friendRepo.GetByUserID(userID)
 	if err != nil {
 		t.Fatalf("get friends failed: %v", err)
 	}
@@ -143,7 +150,7 @@ func TestFriendModelQueryExisting(t *testing.T) {
 	}
 
 	// 测试获取特定好友关系
-	found, err := model.GetFriend(userID, friendID)
+	found, err := friendRepo.Get(userID, friendID)
 	if err != nil {
 		t.Fatalf("get friend failed: %v", err)
 	}
@@ -154,7 +161,7 @@ func TestFriendModelQueryExisting(t *testing.T) {
 	}
 
 	// 测试是否是好友
-	isFriend, err := model.IsFriend(userID, friendID)
+	isFriend, err := friendRepo.IsFriend(userID, friendID)
 	if err != nil {
 		t.Fatalf("check is friend failed: %v", err)
 	}
@@ -174,18 +181,21 @@ func TestFriendModel双向关系(t *testing.T) {
 	}
 	defer mysql.Close()
 
+	// 创建仓储实例
+	friendRepo := registry.NewFriendRepository()
+
 	// 验证已有的双向好友关系 (alice=2, bob=3)
 	userID := int64(2)  // alice
 	friendID := int64(3) // bob
 
 	// 获取 alice 的好友
-	friends1, err := model.GetFriends(userID)
+	friends1, err := friendRepo.GetByUserID(userID)
 	if err != nil {
 		t.Fatalf("get alice's friends failed: %v", err)
 	}
 
 	// 获取 bob 的好友
-	friends2, err := model.GetFriends(friendID)
+	friends2, err := friendRepo.GetByUserID(friendID)
 	if err != nil {
 		t.Fatalf("get bob's friends failed: %v", err)
 	}

@@ -61,3 +61,8 @@ func (s *MessageService) BatchMarkRead(messageIDs []int64, userID int64) error {
 func (s *MessageService) GetUnreadCount(userID int64) (int64, error) {
 	return s.messageReadRepo.GetUnreadCount(userID)
 }
+
+// GetUnreadMessages 获取用户未读消息
+func (s *MessageService) GetUnreadMessages(userID int64, limit int) ([]*model.Message, error) {
+	return s.messageRepo.GetUnreadMessages(userID, limit)
+}

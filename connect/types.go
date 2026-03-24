@@ -32,10 +32,11 @@ const (
 	CmdAuthReply = "auth_reply" // 认证响应
 
 	// 消息相关
-	CmdMsg          = "msg"            // 聊天消息
-	CmdMsgReply     = "msg_reply"      // 消息确认（ACK）
-	CmdMsgRead      = "msg_read"       // 消息已读
-	CmdMsgReadReply = "msg_read_reply" // 已读确认
+	CmdMsg           = "msg"             // 聊天消息
+	CmdMsgReply      = "msg_reply"       // 消息确认（ACK）
+	CmdMsgRead       = "msg_read"        // 消息已读
+	CmdMsgReadReply  = "msg_read_reply"  // 已读确认
+	CmdOfflineNotify = "offline_notify"  // 离线通知
 
 	// 状态相关
 	CmdOnline  = "online"  // 用户上线
