@@ -40,9 +40,8 @@ func (h *UserHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "注册成功",
 		"data": gin.H{
 			"id":       user.ID,
@@ -50,6 +49,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 			"nickname": user.Nickname,
 		},
 	})
+
 }
 
 // Login 登录
@@ -75,7 +75,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "登录成功",
 		"data": gin.H{
 			"token": token,
@@ -101,7 +101,7 @@ func (h *UserHandler) GetInfo(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
-		"data":  user,
+		"data": user,
 	})
 }
 

@@ -24,6 +24,7 @@ func NewRouter(
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
+	engine.Use(middleware.CORS())
 	engine.Use(gin.Logger(), gin.Recovery())
 
 	// 创建处理器
