@@ -1,18 +1,18 @@
 package model
 
-import (
-	"time"
-)
+import "time"
 
-// MessageRead 消息已读模型
-type MessageRead struct {
-	ID        int64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	MessageID int64     `gorm:"column:message_id;not null;uniqueIndex:uk_msg_user,priority:1" json:"message_id"`
-	UserID    int64     `gorm:"column:user_id;not null;index:idx_user;uniqueIndex:uk_msg_user,priority:2" json:"user_id"`
-	ReadAt    time.Time `gorm:"column:read_at;autoCreateTime" json:"read_at"`
+// UnreadCount 用户未读消息计数模型
+// 存储每个用户对每个发送者/群组的未读消息数量
+type UnreadCount struct {
+	UserID   int64     `gorm:"column:user_id;primaryKey"`                    // 接收者ID
+	FromID   int64     `gorm:"column:from_id;primaryKey"`                    // 发送者ID（群聊时为0）
+	GroupID  int64     `gorm:"column:group_id;default:0"`                    // 群组ID（0表示私聊）
+	Count    int64     `gorm:"column:count;default:0"`                       // 未读数量
+	ReadAt   time.Time `gorm:"column:read_at;autoUpdateTime"`               // 最后阅读时间
 }
 
 // TableName 指定表名
-func (MessageRead) TableName() string {
-	return "message_read"
+func (UnreadCount) TableName() string {
+	return "unread_count"
 }

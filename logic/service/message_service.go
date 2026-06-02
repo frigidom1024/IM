@@ -47,22 +47,22 @@ func (s *MessageService) Revoke(id int64) error {
 	return s.messageRepo.Revoke(id)
 }
 
-// MarkRead 标记消息已读
-func (s *MessageService) MarkRead(messageID, userID int64) error {
-	return s.messageReadRepo.Mark(messageID, userID)
+// IncrUnread 增加未读计数
+func (s *MessageService) IncrUnread(userID, fromID, groupID int64) error {
+	return s.messageReadRepo.IncrUnread(userID, fromID, groupID)
 }
 
-// BatchMarkRead 批量标记已读
-func (s *MessageService) BatchMarkRead(messageIDs []int64, userID int64) error {
-	return s.messageReadRepo.MarkBatch(messageIDs, userID)
-}
-
-// GetUnreadCount 获取未读数量
+// GetUnreadCount 获取用户总未读数
 func (s *MessageService) GetUnreadCount(userID int64) (int64, error) {
 	return s.messageReadRepo.GetUnreadCount(userID)
 }
 
-// GetUnreadMessages 获取用户未读消息
-func (s *MessageService) GetUnreadMessages(userID int64, limit int) ([]*model.Message, error) {
-	return s.messageRepo.GetUnreadMessages(userID, limit)
+// GetUnreadList 获取用户未读列表
+func (s *MessageService) GetUnreadList(userID int64) ([]*model.UnreadCount, error) {
+	return s.messageReadRepo.GetUnreadList(userID)
+}
+
+// ClearUnread 清除未读计数
+func (s *MessageService) ClearUnread(userID, fromID, groupID int64) error {
+	return s.messageReadRepo.ClearUnread(userID, fromID, groupID)
 }

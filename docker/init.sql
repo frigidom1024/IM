@@ -67,12 +67,13 @@ CREATE TABLE IF NOT EXISTS `message` (
   INDEX idx_created(`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息表';
 
--- 消息已读表
-CREATE TABLE IF NOT EXISTS `message_read` (
-  `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
-  `message_id` BIGINT NOT NULL COMMENT '消息ID',
-  `user_id` BIGINT NOT NULL COMMENT '用户ID',
-  `read_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_msg_user(`message_id`, `user_id`),
+-- 未读计数表（聚合存储每个用户对每个发送者/群组的未读消息数量）
+CREATE TABLE IF NOT EXISTS `unread_count` (
+  `user_id` BIGINT NOT NULL COMMENT '接收者ID',
+  `from_id` BIGINT NOT NULL COMMENT '发送者ID（群聊时为0）',
+  `group_id` BIGINT DEFAULT 0 COMMENT '群组ID（0表示私聊）',
+  `count` BIGINT DEFAULT 0 COMMENT '未读数量',
+  `read_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`, `from_id`, `group_id`),
   INDEX idx_user(`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息已读表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='未读计数表';
