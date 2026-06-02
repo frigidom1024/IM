@@ -4,6 +4,7 @@ import (
 	"gochat/api/handler"
 	"gochat/api/middleware"
 	"gochat/logic/registry"
+	"gochat/pkg/minio"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,6 +22,7 @@ func NewRouter(
 	groupMemberRepo registry.GroupMemberRepository,
 	messageRepo registry.MessageRepository,
 	messageReadRepo registry.MessageReadRepository,
+	minioClient *minio.Client,
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
@@ -32,6 +34,7 @@ func NewRouter(
 	friendHandler := handler.NewFriendHandler(friendRepo)
 	groupHandler := handler.NewGroupHandler(groupRepo, groupMemberRepo)
 	messageHandler := handler.NewMessageHandler(messageRepo, messageReadRepo)
+	uploadHandler := handler.NewUploadHandler(minioClient)
 
 	// API路由组
 	api := engine.Group("/api")
@@ -81,6 +84,9 @@ func NewRouter(
 				message.POST("/read", messageHandler.MarkRead)
 				message.GET("/unread", messageHandler.GetUnreadCount)
 			}
+
+			// 文件上传
+			protected.POST("/upload", uploadHandler.Upload)
 		}
 	}
 

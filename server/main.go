@@ -13,6 +13,7 @@ import (
 	"gochat/logic/service"
 	"gochat/pkg/config"
 	"gochat/pkg/logger"
+	"gochat/pkg/minio"
 	"gochat/pkg/mysql"
 	"gochat/pkg/snowflake"
 
@@ -49,6 +50,13 @@ func main() {
 		log.Fatalf("初始化雪花ID生成器失败: %v", err)
 	}
 
+	// 初始化 MinIO 客户端
+	minioClient, err := minio.NewClient(&cfg.MinIO)
+	if err != nil {
+		log.Fatalf("初始化 MinIO 失败: %v", err)
+	}
+	logger.Info("MinIO 客户端初始化成功", zap.String("bucket", cfg.MinIO.Bucket))
+
 	// 创建仓储
 	userRepo := registry.NewUserRepository()
 	friendRepo := registry.NewFriendRepository()
@@ -69,6 +77,7 @@ func main() {
 		groupMemberRepo,
 		messageRepo,
 		messageReadRepo,
+		minioClient,
 	)
 
 	// 启动WebSocket服务器
