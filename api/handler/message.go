@@ -88,20 +88,15 @@ func (h *MessageHandler) MarkRead(c *gin.Context) {
 	}
 
 	var req struct {
-		MessageIDs []int64 `json:"message_ids"`
+		FromID int64 `json:"from_id"` // 发送者ID
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
 		return
 	}
 
-	if len(req.MessageIDs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "message_ids不能为空"})
-		return
-	}
-
-	err := h.messageService.BatchMarkRead(req.MessageIDs, userID)
-	if err != nil {
+	// 清除该发送者的未读计数
+	if err := h.messageService.ClearUnread(userID, req.FromID, 0); err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
 		return
 	}

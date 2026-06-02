@@ -15,6 +15,7 @@ type Config struct {
 	Etcd   EtcdConfig   `yaml:"etcd"`
 	MinIO  MinIOConfig  `yaml:"minio"`
 	JWT    JWTConfig    `yaml:"jwt"`
+	Logger LoggerConfig `yaml:"logger"`
 }
 
 // ServerConfig 服务器配置
@@ -60,6 +61,12 @@ type MinIOConfig struct {
 type JWTConfig struct {
 	Secret     string `yaml:"secret"`
 	ExpireTime int    `yaml:"expire_time"` // 小时
+}
+
+// LoggerConfig 日志配置
+type LoggerConfig struct {
+	Level  string `yaml:"level"`  // debug/info/warn/error
+	Output string `yaml:"output"` // stdout/file
 }
 
 var GlobalConfig *Config

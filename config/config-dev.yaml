@@ -31,3 +31,7 @@ minio:
 jwt:
   secret: "gochat-secret-key-change-in-production"
   expire_time: 24 # 24小时
+
+logger:
+  level: "debug"  # debug/info/warn/error
+  output: "stdout"
