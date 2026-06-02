@@ -80,5 +80,9 @@ func (c *Client) PresignedURL(ctx context.Context, objectPath string, expires ti
 
 // Delete 删除文件
 func (c *Client) Delete(ctx context.Context, objectPath string) error {
-	return c.client.RemoveObject(ctx, c.bucket, objectPath, minio.RemoveObjectOptions{})
+	err := c.client.RemoveObject(ctx, c.bucket, objectPath, minio.RemoveObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("删除文件失败: %w", err)
+	}
+	return nil
 }
