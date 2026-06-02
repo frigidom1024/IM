@@ -6,6 +6,8 @@
 *.dylib
 bin/
 *.bin
+im-server
+gochat
 
 # Test binary
 *.test
