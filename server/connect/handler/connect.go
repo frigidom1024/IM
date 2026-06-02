@@ -1,7 +1,9 @@
-package connect
+package handler
 
 import (
 	"context"
+
+	"gochat/connect"
 	"gochat/pkg/logger"
 
 	"go.uber.org/zap"
@@ -9,12 +11,12 @@ import (
 
 // DefaultConnectHandler 默认连接处理器
 type DefaultConnectHandler struct {
-	offlineNotifier *OfflineNotifier
-	server          *WsConnServer
+	offlineNotifier *connect.OfflineNotifier
+	server          *connect.WsConnServer
 }
 
 // NewDefaultConnectHandler 创建默认连接处理器
-func NewDefaultConnectHandler(offlineNotifier *OfflineNotifier, server *WsConnServer) *DefaultConnectHandler {
+func NewDefaultConnectHandler(offlineNotifier *connect.OfflineNotifier, server *connect.WsConnServer) *DefaultConnectHandler {
 	return &DefaultConnectHandler{
 		offlineNotifier: offlineNotifier,
 		server:          server,

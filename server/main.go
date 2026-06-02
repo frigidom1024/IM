@@ -10,6 +10,7 @@ import (
 
 	"gochat/api"
 	"gochat/connect"
+	"gochat/connect/handler"
 	"gochat/logic/registry"
 	"gochat/logic/service"
 	"gochat/pkg/config"
@@ -73,7 +74,13 @@ func main() {
 	)
 
 	// 启动WebSocket服务器
-	wsServer := connect.InitServer(messageService, groupService)
+	wsServer, offlineNotifier := connect.InitServer(messageService)
+	registry_ := wsServer.Registry()
+	registry_.SetMessageHandler(handler.NewDefaultMessageHandler(
+		messageService, groupService, offlineNotifier, wsServer,
+	))
+	registry_.SetConnectHandler(handler.NewDefaultConnectHandler(offlineNotifier, wsServer))
+	registry_.SetDisconnectHandler(handler.NewDefaultDisconnectHandler())
 
 	// 启动API服务器（阻塞）
 	go func() {
