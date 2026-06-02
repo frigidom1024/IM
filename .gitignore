@@ -1,18 +1,17 @@
 # Binaries
 *.exe
-*.exe~
 *.dll
 *.so
 *.dylib
-bin/
 *.bin
+
+# Go build output
+server/bin/
 im-server
 gochat
 
 # Test binary
 *.test
-
-# Output of the go coverage tool
 *.out
 
 # Vendor
@@ -32,8 +31,9 @@ Thumbs.db
 # Config
 config/config-prod.yaml
 
-
 # Docker
+deploy/mysql/data/
 
-
-docker/mysql/data
+# Frontend
+web/node_modules/
+web/dist/
