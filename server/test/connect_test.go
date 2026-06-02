@@ -24,25 +24,21 @@ func init() {
 	util.Init("test-secret")
 }
 
-// ========== 测试新的 Handler 系统 ==========
-
 // TestHandlerRegistry 测试 HandlerRegistry
 func TestHandlerRegistry(t *testing.T) {
 	registry := connect.NewHandlerRegistry()
 
-	// 测试命令路由注册
 	msgHandler := &mockMessageHandler{}
 	registry.Register(connect.CmdMsg, msgHandler)
 
 	ctx := context.Background()
-	msg := &connect.WsMsg{Cmd: connect.CmdMsg}
+	msg := connect.NewRawMessage(connect.CmdMsg, "", nil)
 	registry.HandleMessage(ctx, "user123", msg)
 
 	if !msgHandler.called {
 		t.Error("消息处理器应该被调用")
 	}
 
-	// 测试注册连接处理器
 	connHandler := &mockConnectHandler{}
 	registry.RegisterConnectHandler(connHandler)
 	registry.HandleConnect(ctx, "user456")
@@ -51,7 +47,6 @@ func TestHandlerRegistry(t *testing.T) {
 		t.Error("连接处理器应该被调用")
 	}
 
-	// 测试注册断开处理器
 	disconnHandler := &mockDisconnectHandler{}
 	registry.RegisterDisconnectHandler(disconnHandler)
 	registry.HandleDisconnect(ctx, "user789")
@@ -68,7 +63,6 @@ func TestConnectServer_LifeCycle(t *testing.T) {
 
 	var connectCount, disconnectCount atomic.Int32
 
-	// 注册连接处理器
 	registry.RegisterConnectHandler(&mockConnectHandler{
 		onConnect: func(ctx context.Context, userID string) error {
 			connectCount.Add(1)
@@ -76,7 +70,6 @@ func TestConnectServer_LifeCycle(t *testing.T) {
 		},
 	})
 
-	// 注册断开处理器
 	registry.RegisterDisconnectHandler(&mockDisconnectHandler{
 		onDisconnect: func(ctx context.Context, userID string) error {
 			disconnectCount.Add(1)
@@ -84,10 +77,9 @@ func TestConnectServer_LifeCycle(t *testing.T) {
 		},
 	})
 
-	// 注册 ping 命令处理器
 	registry.Register(connect.CmdPing, &mockMessageHandler{
-		onMessage: func(userID string, msg *connect.WsMsg) error {
-			if msg.Cmd == connect.CmdPing {
+		onMessage: func(userID string, msg connect.Message) error {
+			if msg.Cmd() == connect.CmdPing {
 				pongMsg := connect.NewPongMsg()
 				return server.Send(userID, pongMsg)
 			}
@@ -128,8 +120,8 @@ func TestConnectServer_LifeCycle(t *testing.T) {
 		t.Errorf("连接回调应该被调用1次，实际 %d", connectCount.Load())
 	}
 
-	// 测试发送心跳
-	pingMsg := connect.NewWsMsg(connect.CmdPing, "", nil)
+	// 发送心跳
+	pingMsg := connect.NewRawMessage(connect.CmdPing, "", nil)
 	pingData, _ := json.Marshal(pingMsg)
 	err = wsConn.WriteMessage(websocket.TextMessage, pingData)
 	if err != nil {
@@ -141,13 +133,13 @@ func TestConnectServer_LifeCycle(t *testing.T) {
 		t.Fatalf("读取响应失败: %v", err)
 	}
 
-	var pongMsg connect.WsMsg
+	var pongMsg connect.RawMessage
 	if err := json.Unmarshal(pongData, &pongMsg); err != nil {
 		t.Fatalf("解析响应失败: %v", err)
 	}
 
-	if pongMsg.Cmd != connect.CmdPong {
-		t.Errorf("期望收到 pong，实际收到 %s", pongMsg.Cmd)
+	if pongMsg.Cmd() != connect.CmdPong {
+		t.Errorf("期望收到 pong，实际收到 %s", pongMsg.Cmd())
 	}
 
 	wsConn.Close()
@@ -262,10 +254,10 @@ func TestConnectServer_SingleLogin(t *testing.T) {
 
 type mockMessageHandler struct {
 	called    bool
-	onMessage func(userID string, msg *connect.WsMsg) error
+	onMessage func(userID string, msg connect.Message) error
 }
 
-func (m *mockMessageHandler) Handle(ctx context.Context, userID string, msg *connect.WsMsg) error {
+func (m *mockMessageHandler) Handle(ctx context.Context, userID string, msg connect.Message) error {
 	m.called = true
 	if m.onMessage != nil {
 		return m.onMessage(userID, msg)

@@ -29,8 +29,13 @@ func NewChatHandler(msgSvc connect.MessageService, groupSvc connect.GroupService
 }
 
 // Handle 处理聊天消息
-func (h *ChatHandler) Handle(ctx context.Context, userID string, wsMsg *connect.WsMsg) error {
-	chatData, err := wsMsg.GetChatMsgData()
+func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Message) error {
+	raw, ok := msg.(*connect.RawMessage)
+	if !ok {
+		return connect.ErrInvalidDataType
+	}
+
+	chatData, err := raw.GetChatMsgData()
 	if err != nil {
 		logger.Warn("解析聊天消息失败", zap.String("userID", userID), zap.Error(err))
 		return err
@@ -38,7 +43,7 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, wsMsg *connect.
 
 	if err := chatData.Validate(); err != nil {
 		logger.Warn("消息格式验证失败", zap.String("userID", userID), zap.Error(err))
-		h.sendError(userID, wsMsg.Seq, 1001, err.Error())
+		h.sendError(userID, msg.Seq(), 1001, err.Error())
 		return err
 	}
 
@@ -48,7 +53,7 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, wsMsg *connect.
 		return err
 	}
 
-	msg := &model.Message{
+	msgModel := &model.Message{
 		ID:      snowflake.MustNextID(),
 		FromID:  senderID,
 		ToID:    chatData.ToID,
@@ -57,34 +62,31 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, wsMsg *connect.
 		Content: chatData.Content,
 	}
 
-	if err := h.msgSvc.Send(msg); err != nil {
+	if err := h.msgSvc.Send(msgModel); err != nil {
 		logger.Error("保存消息失败", zap.String("userID", userID), zap.Error(err))
-		h.sendError(userID, wsMsg.Seq, 2001, "消息发送失败")
+		h.sendError(userID, msg.Seq(), 2001, "消息发送失败")
 		return err
 	}
 
-	// 私聊未读计数
-	if msg.ToID > 0 {
-		if err := h.msgSvc.IncrUnread(msg.ToID, msg.FromID, 0); err != nil {
+	if msgModel.ToID > 0 {
+		if err := h.msgSvc.IncrUnread(msgModel.ToID, msgModel.FromID, 0); err != nil {
 			logger.Warn("增加未读计数失败",
-				zap.Int64("userID", msg.ToID),
-				zap.Int64("fromID", msg.FromID),
+				zap.Int64("userID", msgModel.ToID),
+				zap.Int64("fromID", msgModel.FromID),
 				zap.Error(err))
 		}
 	}
 
-	logger.Debug("消息处理成功", zap.String("userID", userID), zap.Int64("messageID", msg.ID))
+	logger.Debug("消息处理成功", zap.String("userID", userID), zap.Int64("messageID", msgModel.ID))
 
-	h.sendMsgAck(userID, wsMsg.Seq, msg.ID)
+	h.sendMsgAck(userID, msg.Seq(), msgModel.ID)
 
-	// 转发私聊
-	if msg.ToID > 0 {
-		h.forwardToUser(strconv.FormatInt(msg.ToID, 10), wsMsg)
+	if msgModel.ToID > 0 {
+		h.forwardToUser(strconv.FormatInt(msgModel.ToID, 10), msg)
 	}
 
-	// 群聊广播
-	if msg.GroupID > 0 {
-		h.broadcastToGroup(msg.GroupID, wsMsg, userID)
+	if msgModel.GroupID > 0 {
+		h.broadcastToGroup(msgModel.GroupID, msg, userID)
 	}
 
 	return nil
@@ -92,23 +94,23 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, wsMsg *connect.
 
 func (h *ChatHandler) sendError(userID, seq string, code int, message string) {
 	errorMsg := connect.NewErrorMsg(code, message)
-	errorMsg.Seq = seq
+	errorMsg.SeqStr = seq
 	h.connSvr.Send(userID, errorMsg)
 }
 
 func (h *ChatHandler) sendMsgAck(userID, seq string, messageID int64) {
 	ackData := map[string]any{"status": "success", "message_id": messageID}
-	ackMsg := connect.NewWsMsg(connect.CmdMsgReply, seq, ackData)
+	ackMsg := connect.NewRawMessage(connect.CmdMsgReply, seq, ackData)
 	h.connSvr.Send(userID, ackMsg)
 }
 
-func (h *ChatHandler) forwardToUser(userID string, msg *connect.WsMsg) {
+func (h *ChatHandler) forwardToUser(userID string, msg connect.Message) {
 	if h.connSvr.IsOnline(userID) {
 		h.connSvr.Send(userID, msg)
 	}
 }
 
-func (h *ChatHandler) broadcastToGroup(groupID int64, msg *connect.WsMsg, excludeUserID string) {
+func (h *ChatHandler) broadcastToGroup(groupID int64, msg connect.Message, excludeUserID string) {
 	members, err := h.groupSvc.GetMembers(groupID)
 	if err != nil {
 		logger.Error("获取群成员失败", zap.Int64("groupID", groupID), zap.Error(err))

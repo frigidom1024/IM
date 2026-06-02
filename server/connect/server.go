@@ -15,7 +15,7 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // 先放开，生产要校验
+		return true
 	},
 }
 
@@ -30,10 +30,7 @@ type wsConnection struct {
 
 // WsConnServer WebSocket连接服务器实现
 type WsConnServer struct {
-	// 用户ID到连接的映射（并发安全）
-	conns sync.Map // string(userID) -> *wsConnection
-
-	// 处理器注册表
+	conns    sync.Map // string(userID) -> *wsConnection
 	registry *HandlerRegistry
 }
 
@@ -51,7 +48,6 @@ func (s *WsConnServer) Registry() *HandlerRegistry {
 
 // HandleWebSocket 处理WebSocket连接请求
 func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// 从请求头获取token
 	token := r.Header.Get("Authorization")
 	if token == "" {
 		token = r.URL.Query().Get("token")
@@ -62,12 +58,10 @@ func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 去除 Bearer 前缀
 	if len(token) > 7 && token[:7] == "Bearer " {
 		token = token[7:]
 	}
 
-	// 验证token并获取用户信息
 	claims, err := util.ParseToken(token)
 	if err != nil {
 		logger.Warn("Token验证失败", zap.Error(err))
@@ -77,20 +71,17 @@ func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	userID := strconv.Itoa(claims.UserID)
 
-	// 检查用户是否已在线（单点登录）
 	if _, exists := s.conns.Load(userID); exists {
 		logger.Info("踢出旧连接", zap.String("userID", userID))
 		s.Disconnect(userID)
 	}
 
-	// 升级HTTP连接为WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.Warn("WebSocket升级失败", zap.Error(err))
 		return
 	}
 
-	// 创建连接对象
 	wsConn := &wsConnection{
 		conn:   conn,
 		userID: userID,
@@ -98,21 +89,18 @@ func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		server: s,
 	}
 
-	// 存储连接
 	s.conns.Store(userID, wsConn)
 	logger.Info("用户连接成功", zap.String("userID", userID))
 
-	// 触发连接回调
 	ctx := context.Background()
 	s.registry.HandleConnect(ctx, userID)
 
-	// 启动读写goroutine
 	go wsConn.readPump()
 	go wsConn.writePump()
 }
 
-// Send 向指定用户发送消息
-func (s *WsConnServer) Send(userID string, msg *WsMsg) error {
+// Send 向指定用户发送消息（Message 接口）
+func (s *WsConnServer) Send(userID string, msg Message) error {
 	data, err := msg.ToJSON()
 	if err != nil {
 		return err
@@ -133,7 +121,7 @@ func (s *WsConnServer) Send(userID string, msg *WsMsg) error {
 }
 
 // SendBatch 批量向多个用户发送消息
-func (s *WsConnServer) SendBatch(userIDs []string, msg *WsMsg) error {
+func (s *WsConnServer) SendBatch(userIDs []string, msg Message) error {
 	data, err := msg.ToJSON()
 	if err != nil {
 		return err
@@ -203,7 +191,7 @@ func (s *WsConnServer) RunWithServeMux(mux *http.ServeMux, prefix string) {
 
 // SendOfflineNotify 发送离线通知给用户
 func (s *WsConnServer) SendOfflineNotify(userID string, notifyData *OfflineNotifyData) error {
-	notifyMsg := NewWsMsg(CmdOfflineNotify, "", notifyData)
+	notifyMsg := NewRawMessage(CmdOfflineNotify, "", notifyData)
 	return s.Send(userID, notifyMsg)
 }
 
@@ -211,16 +199,10 @@ func (s *WsConnServer) SendOfflineNotify(userID string, notifyData *OfflineNotif
 func (c *wsConnection) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
-		// 从连接池移除
 		c.server.conns.Delete(c.userID)
-
-		// 关闭WebSocket连接
 		err = c.conn.Close()
-
-		// 关闭发送队列
 		close(c.send)
 
-		// 触发断开回调
 		ctx := context.Background()
 		c.server.registry.HandleDisconnect(ctx, c.userID)
 	})
@@ -232,9 +214,7 @@ func (c *wsConnection) readPump() {
 	defer c.Close()
 
 	c.conn.SetReadLimit(512)
-	// 设置读取超时，用于检测空闲连接
 	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	// 重置读取超时的pong处理器
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
@@ -249,7 +229,6 @@ func (c *wsConnection) readPump() {
 			break
 		}
 
-		// 解析WebSocket消息
 		wsMsg, err := ParseWsMsg(message)
 		if err != nil {
 			logger.Warn("解析消息失败", zap.String("userID", c.userID), zap.Error(err))
@@ -258,9 +237,8 @@ func (c *wsConnection) readPump() {
 
 		logger.Debug("收到消息",
 			zap.String("userID", c.userID),
-			zap.String("cmd", wsMsg.Cmd))
+			zap.String("cmd", wsMsg.Cmd()))
 
-		// 触发消息回调
 		ctx := context.Background()
 		c.server.registry.HandleMessage(ctx, c.userID, wsMsg)
 	}
@@ -278,7 +256,6 @@ func (c *wsConnection) writePump() {
 		select {
 		case message, ok := <-c.send:
 			if !ok {
-				// 发送队列已关闭
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
@@ -291,7 +268,6 @@ func (c *wsConnection) writePump() {
 			}
 
 		case <-ticker.C:
-			// 发送心跳
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return

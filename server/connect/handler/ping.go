@@ -20,7 +20,7 @@ func NewPingHandler(connSvr connect.ConnServer) *PingHandler {
 }
 
 // Handle 处理心跳消息
-func (h *PingHandler) Handle(ctx context.Context, userID string, msg *connect.WsMsg) error {
+func (h *PingHandler) Handle(ctx context.Context, userID string, msg connect.Message) error {
 	logger.Debug("处理心跳", zap.String("userID", userID))
 
 	pongMsg := connect.NewPongMsg()

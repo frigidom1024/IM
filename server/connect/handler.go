@@ -12,7 +12,7 @@ import (
 
 // MessageHandler 消息处理器
 type MessageHandler interface {
-	Handle(ctx context.Context, userID string, msg *WsMsg) error
+	Handle(ctx context.Context, userID string, msg Message) error
 }
 
 // ConnectHandler 连接处理器
@@ -25,7 +25,7 @@ type DisconnectHandler interface {
 	OnDisconnect(ctx context.Context, userID string) error
 }
 
-// MessageService 消息服务接口（connect 层需要的业务能力）
+// MessageService 消息服务接口
 type MessageService interface {
 	Send(msg *model.Message) error
 	GetByID(id int64) (*model.Message, error)
@@ -39,7 +39,7 @@ type GroupService interface {
 
 // ConnServer WebSocket 服务器接口（handler 需要的服务端能力）
 type ConnServer interface {
-	Send(userID string, msg *WsMsg) error
+	Send(userID string, msg Message) error
 	IsOnline(userID string) bool
 }
 
@@ -58,7 +58,7 @@ type OfflineNotifier interface {
 
 // HandlerRegistry 处理器注册表（命令路由模式）
 type HandlerRegistry struct {
-	handlers           map[string]MessageHandler // cmd -> handler
+	handlers           map[string]MessageHandler
 	connectHandlers    []ConnectHandler
 	disconnectHandlers []DisconnectHandler
 }
@@ -70,7 +70,7 @@ func NewHandlerRegistry() *HandlerRegistry {
 	}
 }
 
-// Register 注册指定命令的处理器（OCP: 新增命令只需注册，不修改现有代码）
+// Register 注册指定命令的处理器
 func (r *HandlerRegistry) Register(cmd string, h MessageHandler) {
 	r.handlers[cmd] = h
 	logger.Debug("注册消息处理器", zap.String("cmd", cmd))
@@ -89,21 +89,21 @@ func (r *HandlerRegistry) RegisterDisconnectHandler(h DisconnectHandler) {
 }
 
 // HandleMessage 路由消息到对应的命令处理器
-func (r *HandlerRegistry) HandleMessage(ctx context.Context, userID string, msg *WsMsg) {
-	handler, ok := r.handlers[msg.Cmd]
+func (r *HandlerRegistry) HandleMessage(ctx context.Context, userID string, msg Message) {
+	handler, ok := r.handlers[msg.Cmd()]
 	if !ok {
-		logger.Warn("未注册的命令", zap.String("cmd", msg.Cmd))
+		logger.Warn("未注册的命令", zap.String("cmd", msg.Cmd()))
 		return
 	}
 	if err := handler.Handle(ctx, userID, msg); err != nil {
 		logger.Warn("消息处理失败",
-			zap.String("cmd", msg.Cmd),
+			zap.String("cmd", msg.Cmd()),
 			zap.String("userID", userID),
 			zap.Error(err))
 	}
 }
 
-// HandleConnect 处理连接（调用所有注册的连接处理器）
+// HandleConnect 处理连接
 func (r *HandlerRegistry) HandleConnect(ctx context.Context, userID string) {
 	for _, h := range r.connectHandlers {
 		if err := h.OnConnect(ctx, userID); err != nil {
@@ -112,7 +112,7 @@ func (r *HandlerRegistry) HandleConnect(ctx context.Context, userID string) {
 	}
 }
 
-// HandleDisconnect 处理断开（调用所有注册的断开处理器）
+// HandleDisconnect 处理断开
 func (r *HandlerRegistry) HandleDisconnect(ctx context.Context, userID string) {
 	for _, h := range r.disconnectHandlers {
 		if err := h.OnDisconnect(ctx, userID); err != nil {

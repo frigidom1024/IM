@@ -73,7 +73,7 @@ func (n *offlineNotifier) HandleUserConnect(userID string, srv ConnServer) {
 		return
 	}
 
-	notifyMsg := NewWsMsg(CmdOfflineNotify, "", notifyData)
+	notifyMsg := NewRawMessage(CmdOfflineNotify, "", notifyData)
 	if err := srv.Send(userID, notifyMsg); err != nil {
 		logger.Warn("发送离线通知失败",
 			zap.String("userID", userID),
