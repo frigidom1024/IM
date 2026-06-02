@@ -8,10 +8,10 @@ type AuthData struct {
 // ChatMsgData 聊天消息数据
 type ChatMsgData struct {
 	FromID  int64  `json:"from_id"`
-	ToID    int64  `json:"to_id"`    // 0 表示群消息
-	GroupID int64  `json:"group_id"` // 0 表示单聊
-	Type    int8   `json:"type"`
-	Content string `json:"content"`
+	ToID    int64  `json:"to_id"`
+	GroupID int64  `json:"group_id"`
+	Type    string `json:"type"`    // string: text/image/file/voice/video/mention
+	Content string `json:"content"` // 文字存原文，多媒体存 FileMeta JSON
 }
 
 // MsgReadData 消息已读数据
@@ -30,7 +30,10 @@ func (c *ChatMsgData) Validate() error {
 	if c.FromID <= 0 {
 		return ErrInvalidFromID
 	}
-	if c.Type < 1 || c.Type > 4 {
+	switch c.Type {
+	case "text", "image", "file", "mention", "voice", "video":
+		// 所有类型 content 均不可为空
+	default:
 		return ErrInvalidMsgType
 	}
 	if c.Content == "" {
