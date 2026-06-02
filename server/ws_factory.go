@@ -11,12 +11,15 @@ func NewWsServer(messageService *service.MessageService, groupService *service.G
 	server := connect.NewWsConnServer()
 	offlineNotifier := connect.NewOfflineNotifier(messageService)
 
-	registry := server.Registry()
-	registry.SetMessageHandler(handler.NewDefaultMessageHandler(
-		messageService, groupService, offlineNotifier, server,
-	))
-	registry.SetConnectHandler(handler.NewDefaultConnectHandler(offlineNotifier, server))
-	registry.SetDisconnectHandler(handler.NewDefaultDisconnectHandler())
+	reg := server.Registry()
+
+	// 按命令类型注册独立的处理器（OCP: 新增命令只需追加 Register 调用）
+	reg.Register(connect.CmdMsg, handler.NewChatHandler(messageService, groupService, server))
+	reg.Register(connect.CmdPing, handler.NewPingHandler(server))
+	reg.Register(connect.CmdMsgRead, handler.NewMsgReadHandler(messageService, offlineNotifier, server))
+
+	reg.RegisterConnectHandler(handler.NewDefaultConnectHandler(offlineNotifier, server))
+	reg.RegisterDisconnectHandler(handler.NewDefaultDisconnectHandler())
 
 	return server
 }

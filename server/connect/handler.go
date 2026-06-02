@@ -2,108 +2,121 @@ package connect
 
 import (
 	"context"
+	"gochat/logic/model"
 	"gochat/pkg/logger"
 
 	"go.uber.org/zap"
 )
 
-// MessageHandler 消息处理器接口
+// ==================== 接口定义 ====================
+
+// MessageHandler 消息处理器
 type MessageHandler interface {
 	Handle(ctx context.Context, userID string, msg *WsMsg) error
 }
 
-// ConnectHandler 连接处理器接口
+// ConnectHandler 连接处理器
 type ConnectHandler interface {
 	OnConnect(ctx context.Context, userID string) error
 }
 
-// DisconnectHandler 断开处理器接口
+// DisconnectHandler 断开处理器
 type DisconnectHandler interface {
 	OnDisconnect(ctx context.Context, userID string) error
 }
 
-// HandlerRegistry 处理器注册表（支持注册多个处理器）
+// MessageService 消息服务接口（connect 层需要的业务能力）
+type MessageService interface {
+	Send(msg *model.Message) error
+	GetByID(id int64) (*model.Message, error)
+	IncrUnread(userID, fromID, groupID int64) error
+}
+
+// GroupService 群组服务接口
+type GroupService interface {
+	GetMembers(groupID int64) ([]*model.GroupMember, error)
+}
+
+// ConnServer WebSocket 服务器接口（handler 需要的服务端能力）
+type ConnServer interface {
+	Send(userID string, msg *WsMsg) error
+	IsOnline(userID string) bool
+}
+
+// UnreadClearer 未读清除接口
+type UnreadClearer interface {
+	ClearUnread(userID string, fromID, groupID int64) error
+}
+
+// OfflineNotifier 离线通知器接口
+type OfflineNotifier interface {
+	HandleUserConnect(userID string, srv ConnServer)
+	ClearUnread(userID string, fromID, groupID int64) error
+}
+
+// ==================== HandlerRegistry ====================
+
+// HandlerRegistry 处理器注册表（命令路由模式）
 type HandlerRegistry struct {
-	messageHandlers     []MessageHandler
-	connectHandlers     []ConnectHandler
-	disconnectHandlers  []DisconnectHandler
+	handlers           map[string]MessageHandler // cmd -> handler
+	connectHandlers    []ConnectHandler
+	disconnectHandlers []DisconnectHandler
 }
 
 // NewHandlerRegistry 创建处理器注册表
 func NewHandlerRegistry() *HandlerRegistry {
 	return &HandlerRegistry{
-		messageHandlers:     make([]MessageHandler, 0),
-		connectHandlers:     make([]ConnectHandler, 0),
-		disconnectHandlers:  make([]DisconnectHandler, 0),
+		handlers: make(map[string]MessageHandler),
 	}
 }
 
-// RegisterMessageHandler 注册消息处理器（追加）
-func (r *HandlerRegistry) RegisterMessageHandler(h MessageHandler) {
-	r.messageHandlers = append(r.messageHandlers, h)
-	logger.Info("注册消息处理器", zap.String("handler", "MessageHandler"), zap.Int("count", len(r.messageHandlers)))
+// Register 注册指定命令的处理器（OCP: 新增命令只需注册，不修改现有代码）
+func (r *HandlerRegistry) Register(cmd string, h MessageHandler) {
+	r.handlers[cmd] = h
+	logger.Debug("注册消息处理器", zap.String("cmd", cmd))
 }
 
-// SetMessageHandler 设置消息处理器（清空并设置单个）
-func (r *HandlerRegistry) SetMessageHandler(h MessageHandler) {
-	r.messageHandlers = []MessageHandler{h}
-	logger.Info("设置消息处理器", zap.String("handler", "MessageHandler"))
-}
-
-// RegisterConnectHandler 注册连接处理器（追加）
+// RegisterConnectHandler 注册连接处理器
 func (r *HandlerRegistry) RegisterConnectHandler(h ConnectHandler) {
 	r.connectHandlers = append(r.connectHandlers, h)
-	logger.Info("注册连接处理器", zap.String("handler", "ConnectHandler"), zap.Int("count", len(r.connectHandlers)))
+	logger.Debug("注册连接处理器", zap.Int("count", len(r.connectHandlers)))
 }
 
-// SetConnectHandler 设置连接处理器（清空并设置单个）
-func (r *HandlerRegistry) SetConnectHandler(h ConnectHandler) {
-	r.connectHandlers = []ConnectHandler{h}
-	logger.Info("设置连接处理器", zap.String("handler", "ConnectHandler"))
-}
-
-// RegisterDisconnectHandler 注册断开处理器（追加）
+// RegisterDisconnectHandler 注册断开处理器
 func (r *HandlerRegistry) RegisterDisconnectHandler(h DisconnectHandler) {
 	r.disconnectHandlers = append(r.disconnectHandlers, h)
-	logger.Info("注册断开处理器", zap.String("handler", "DisconnectHandler"), zap.Int("count", len(r.disconnectHandlers)))
+	logger.Debug("注册断开处理器", zap.Int("count", len(r.disconnectHandlers)))
 }
 
-// SetDisconnectHandler 设置断开处理器（清空并设置单个）
-func (r *HandlerRegistry) SetDisconnectHandler(h DisconnectHandler) {
-	r.disconnectHandlers = []DisconnectHandler{h}
-	logger.Info("设置断开处理器", zap.String("handler", "DisconnectHandler"))
-}
-
-// HandleMessage 处理消息（调用所有注册的消息处理器）
+// HandleMessage 路由消息到对应的命令处理器
 func (r *HandlerRegistry) HandleMessage(ctx context.Context, userID string, msg *WsMsg) {
-	for _, handler := range r.messageHandlers {
-		if err := handler.Handle(ctx, userID, msg); err != nil {
-			logger.Warn("消息处理失败",
-				zap.String("userID", userID),
-				zap.String("cmd", msg.Cmd),
-				zap.Error(err))
-		}
+	handler, ok := r.handlers[msg.Cmd]
+	if !ok {
+		logger.Warn("未注册的命令", zap.String("cmd", msg.Cmd))
+		return
+	}
+	if err := handler.Handle(ctx, userID, msg); err != nil {
+		logger.Warn("消息处理失败",
+			zap.String("cmd", msg.Cmd),
+			zap.String("userID", userID),
+			zap.Error(err))
 	}
 }
 
 // HandleConnect 处理连接（调用所有注册的连接处理器）
 func (r *HandlerRegistry) HandleConnect(ctx context.Context, userID string) {
-	for _, handler := range r.connectHandlers {
-		if err := handler.OnConnect(ctx, userID); err != nil {
-			logger.Warn("连接处理失败",
-				zap.String("userID", userID),
-				zap.Error(err))
+	for _, h := range r.connectHandlers {
+		if err := h.OnConnect(ctx, userID); err != nil {
+			logger.Warn("连接处理失败", zap.String("userID", userID), zap.Error(err))
 		}
 	}
 }
 
 // HandleDisconnect 处理断开（调用所有注册的断开处理器）
 func (r *HandlerRegistry) HandleDisconnect(ctx context.Context, userID string) {
-	for _, handler := range r.disconnectHandlers {
-		if err := handler.OnDisconnect(ctx, userID); err != nil {
-			logger.Warn("断开处理失败",
-				zap.String("userID", userID),
-				zap.Error(err))
+	for _, h := range r.disconnectHandlers {
+		if err := h.OnDisconnect(ctx, userID); err != nil {
+			logger.Warn("断开处理失败", zap.String("userID", userID), zap.Error(err))
 		}
 	}
 }

@@ -11,12 +11,12 @@ import (
 
 // DefaultConnectHandler 默认连接处理器
 type DefaultConnectHandler struct {
-	offlineNotifier *connect.OfflineNotifier
-	server          *connect.WsConnServer
+	offlineNotifier connect.OfflineNotifier
+	server          connect.ConnServer
 }
 
 // NewDefaultConnectHandler 创建默认连接处理器
-func NewDefaultConnectHandler(offlineNotifier *connect.OfflineNotifier, server *connect.WsConnServer) *DefaultConnectHandler {
+func NewDefaultConnectHandler(offlineNotifier connect.OfflineNotifier, server connect.ConnServer) *DefaultConnectHandler {
 	return &DefaultConnectHandler{
 		offlineNotifier: offlineNotifier,
 		server:          server,
@@ -27,7 +27,6 @@ func NewDefaultConnectHandler(offlineNotifier *connect.OfflineNotifier, server *
 func (h *DefaultConnectHandler) OnConnect(ctx context.Context, userID string) error {
 	logger.Info("用户上线", zap.String("userID", userID))
 
-	// 发送离线消息通知
 	if h.offlineNotifier != nil {
 		h.offlineNotifier.HandleUserConnect(userID, h.server)
 	}
