@@ -8,6 +8,7 @@ const http = axios.create({
 // 请求拦截器：自动带上token
 http.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
+  console.log('请求拦截器 - Token:', token)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }

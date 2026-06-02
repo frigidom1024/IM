@@ -88,7 +88,7 @@ const myName = computed(() => userStore.myName)
 const friends = computed(() => userStore.friends)
 const friendMap = computed(() => userStore.friendMap)
 const currentChat = computed(() => chatStore.currentChat)
-const messages = computed(() => chatStore.messages)
+const messages = computed(() => chatStore.currentMessages)
 const unreadMap = computed(() => chatStore.unreadMap)
 
 onMounted(() => {

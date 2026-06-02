@@ -25,6 +25,7 @@ class WsClient {
     this.ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data)
+        console.log('[ws] received:', msg)
         this._emit(msg.cmd, msg)
         this._emit('*', msg)
       } catch (err) {
@@ -43,8 +44,11 @@ class WsClient {
   }
 
   send(msg) {
+    console.log('[ws] send:', msg)
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
+    } else {
+      console.warn('[ws] not connected, readyState:', this.ws?.readyState)
     }
   }
 

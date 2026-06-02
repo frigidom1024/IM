@@ -15,8 +15,10 @@ export const useUserStore = defineStore('user', () => {
 
   async function login(username, password) {
     const res = await authApi.login({ username, password })
+    console.log('登录响应:', res)
     // res is the response body: { code, message, data: { token, user } }
     if (res.code !== 0) throw new Error(res.message)
+    console.log('Token:', res.data?.token)
     token.value = res.data.token
     user.value = res.data.user
     localStorage.setItem('token', res.data.token)

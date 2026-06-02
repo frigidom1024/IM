@@ -59,11 +59,13 @@ async function submit() {
       mode.value = 'login'
       error.value = '注册成功，请登录'
     } else {
+      console.log('开始登录...')
       await userStore.login(form.username, form.password)
-      console.log('登录成功，跳转...', userStore.token)
+      console.log('登录成功，跳转...', userStore.token, userStore.user)
       window.location.href = '/'
     }
   } catch (e) {
+    console.error('登录失败:', e)
     error.value = e.message
   } finally {
     loading.value = false
