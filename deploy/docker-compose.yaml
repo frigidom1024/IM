@@ -1,0 +1,111 @@
+version: "3.8"
+
+services:
+  # ========== 基础设施 ==========
+  mysql:
+    image: mysql:8.0
+    container_name: gochat-mysql
+    restart: always
+    ports:
+      - "${MYSQL_PORT}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: gochat
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - gochat-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: gochat-redis
+    restart: always
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - gochat-network
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: gochat-etcd
+    restart: always
+    ports:
+      - "${ETCD_PORT}:2379"
+    environment:
+      ETCD_NAME: etcd0
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+    networks:
+      - gochat-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: gochat-minio
+    restart: always
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - gochat-network
+
+  # ========== 应用服务 ==========
+  gochat-server:
+    image: ${SERVER_IMAGE}
+    container_name: gochat-server
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      etcd:
+        condition: service_started
+    volumes:
+      - ./server/config-dev.yaml:/app/config/config-dev.yaml
+    environment:
+      - TZ=Asia/Shanghai
+    networks:
+      - gochat-network
+
+  # ========== 统一入口 ==========
+  nginx:
+    image: nginx:alpine
+    container_name: gochat-nginx
+    restart: always
+    ports:
+      - "${NGINX_PORT}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - gochat-server
+    networks:
+      - gochat-network
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:
+
+networks:
+  gochat-network:
+    driver: bridge
