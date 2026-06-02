@@ -1,44 +1,39 @@
 APP_NAME = gochat
-BUILD_DIR = bin
 
-all:build
+.PHONY: all build run docker-build docker-up docker-down docker-logs docker-restart dev-web clean
 
+all: build
+
+# ========== 后端编译 ==========
 build:
-	@echo "Building $(APP_NAME)..."
-	@mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/$(APP_NAME).bin -tags=etcd main.go
+	cd server && go build -tags=etcd -o bin/$(APP_NAME).bin ./main.go
 
 run:
-	@echo "Running $(APP_NAME)..."
-	go run -tags=etcd main.go
+	cd server && go run -tags=etcd ./main.go
 
 test:
-	@echo "Testing $(APP_NAME)..."
-	go test -tags=etcd ./...
+	cd server && go test -tags=etcd ./...
 
-test-cover:
-	@echo "Testing $(APP_NAME)..."
-	go test -v -race -coverprofile=coverage.out   ./...
-	go tool cover -html=coverage.out -o coverage.html
-
-clean:
-	@echo "Cleaning $(APP_NAME)..."
-	rm -rf $(BUILD_DIR)
-	rm -rf coverage.out
-	rm -rf coverage.html
+# ========== Docker ==========
+docker-build:
+	docker compose -f deploy/docker-compose.yaml build gochat-server
 
 docker-up:
-	@echo "Starting Docker Containers"
-	docker-compose up -f /docker/docker-compose.yml
+	docker compose -f deploy/docker-compose.yaml up -d
 
 docker-down:
-	@echo "Stopping Docker Containers"
-	docker-compose down -f /docker/docker-compose.yml
+	docker compose -f deploy/docker-compose.yaml down
 
 docker-logs:
-	@echo "Showing Docker Containers Logs"
-	docker-compose -f  /docker/docker-compose.yml logs -f
-deps:
-	@echo "Installing Dependencies"
-	go mod tidy
-	go mod download
+	docker compose -f deploy/docker-compose.yaml logs -f
+
+docker-restart:
+	docker compose -f deploy/docker-compose.yaml restart
+
+# ========== 前端开发 ==========
+dev-web:
+	cd web && npm run dev
+
+# ========== 清理 ==========
+clean:
+	rm -rf server/bin/
