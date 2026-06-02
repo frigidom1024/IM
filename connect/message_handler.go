@@ -99,6 +99,17 @@ func (h *DefaultMessageHandler) handleChatMessage(ctx context.Context, userID st
 		return err
 	}
 
+	// 增加接收者未读计数
+	if msg.ToID > 0 {
+		// 私聊消息，增加接收者未读计数
+		if err := h.messageService.IncrUnread(msg.ToID, msg.FromID, 0); err != nil {
+			logger.Warn("增加未读计数失败",
+				zap.Int64("userID", msg.ToID),
+				zap.Int64("fromID", msg.FromID),
+				zap.Error(err))
+		}
+	}
+
 	logger.Debug("消息处理成功",
 		zap.String("userID", userID),
 		zap.Int64("messageID", msg.ID))
@@ -121,13 +132,13 @@ func (h *DefaultMessageHandler) handleChatMessage(ctx context.Context, userID st
 
 // handlePing 处理心跳
 func (h *DefaultMessageHandler) handlePing(ctx context.Context, userID string, wsMsg *WsMsg) error {
-	logger.Info("处理心跳", zap.String("userID", userID))
+	logger.Debug("处理心跳", zap.String("userID", userID))
 	pongMsg := NewPongMsg()
 	err := h.server.Send(userID, pongMsg)
 	if err != nil {
 		logger.Error("发送pong失败", zap.String("userID", userID), zap.Error(err))
 	} else {
-		logger.Info("发送pong成功", zap.String("userID", userID))
+		logger.Debug("发送pong成功", zap.String("userID", userID))
 	}
 	return err
 }
@@ -162,16 +173,9 @@ func (h *DefaultMessageHandler) handleMsgRead(ctx context.Context, userID string
 		return nil
 	}
 
-	// 标记已读
-	if err := h.messageService.MarkRead(readData.MessageID, mustParseInt64(userID)); err != nil {
-		logger.Error("标记已读失败", zap.Error(err))
-		h.sendError(userID, wsMsg.Seq, 2002, "标记已读失败")
-		return nil
-	}
-
 	// 清理离线通知
 	if h.offlineNotifier != nil {
-		h.offlineNotifier.MarkRead(userID, readData.MessageID, msg)
+		h.offlineNotifier.ClearUnread(userID, msg.FromID, msg.GroupID)
 	}
 
 	// 发送确认
@@ -243,6 +247,15 @@ func (h *DefaultMessageHandler) broadcastToGroup(groupID int64, msg *WsMsg, excl
 		memberID := strconv.FormatInt(member.UserID, 10)
 		if memberID == excludeUserID {
 			continue
+		}
+
+		// 增加群成员未读计数（FromID使用excludeUserID转换）
+		fromID := mustParseInt64(excludeUserID)
+		if err := h.messageService.IncrUnread(member.UserID, fromID, groupID); err != nil {
+			logger.Warn("增加群成员未读计数失败",
+				zap.Int64("memberID", member.UserID),
+				zap.Int64("groupID", groupID),
+				zap.Error(err))
 		}
 
 		// 检查成员是否在线

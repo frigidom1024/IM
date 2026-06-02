@@ -184,6 +184,23 @@ func (s *WsConnServer) IsOnline(userID string) bool {
 	return ok
 }
 
+// Run 启动WebSocket服务器
+func (s *WsConnServer) Run(addr string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", s.HandleWebSocket)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	srv := &http.Server{Addr: addr, Handler: mux}
+	logger.Info("启动WebSocket服务器", zap.String("addr", addr))
+	return srv.ListenAndServe()
+}
+
+// RunWithServeMux 使用已有的ServeMux运行
+func (s *WsConnServer) RunWithServeMux(mux *http.ServeMux, prefix string) {
+	mux.HandleFunc(prefix+"/ws", s.HandleWebSocket)
+}
+
 // SendOfflineNotify 发送离线通知给用户
 func (s *WsConnServer) SendOfflineNotify(userID string, notifyData *OfflineNotifyData) error {
 	notifyMsg := NewWsMsg(CmdOfflineNotify, "", notifyData)

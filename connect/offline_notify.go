@@ -3,7 +3,6 @@ package connect
 import (
 	"strconv"
 
-	"gochat/logic/model"
 	"gochat/logic/service"
 	"gochat/pkg/logger"
 
@@ -24,43 +23,45 @@ func NewOfflineNotifier(messageService *service.MessageService) *OfflineNotifier
 
 // OfflineNotifyData 离线通知数据
 type OfflineNotifyData struct {
-	UserID     string          `json:"user_id"`
-	Messages   []*model.Message `json:"messages"`   // 未读消息列表
-	TotalCount int64           `json:"total_count"` // 总未读数
+	UserID     string   `json:"user_id"`
+	UnreadList []UnreadCount `json:"unread_list"` // 未读消息统计
+}
+
+// UnreadCount 未读消息统计
+type UnreadCount struct {
+	FromID  int64 `json:"from_id"`  // 发送者ID
+	GroupID int64 `json:"group_id"` // 群组ID（0表示私聊）
+	Count   int64 `json:"count"`    // 未读数量
 }
 
 // GetOfflineNotify 从数据库获取用户的离线通知
 func (n *OfflineNotifier) GetOfflineNotify(userID string) (*OfflineNotifyData, error) {
 	userIDInt := mustParseInt64Offline(userID)
 
-	// 1. 获取未读消息数量
-	totalCount, err := n.messageService.GetUnreadCount(userIDInt)
+	// 直接获取未读列表
+	unreadList, err := n.messageService.GetUnreadList(userIDInt)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. 获取最近的未读消息（限制数量，避免数据过大）
-	messages, err := n.messageService.GetUnreadMessages(userIDInt, 50)
-	if err != nil {
-		return nil, err
+	// 转换为本地 UnreadCount 类型
+	list := make([]UnreadCount, len(unreadList))
+	for i, uc := range unreadList {
+		list[i] = UnreadCount{
+			FromID:  uc.FromID,
+			GroupID: uc.GroupID,
+			Count:   uc.Count,
+		}
 	}
 
 	return &OfflineNotifyData{
 		UserID:     userID,
-		Messages:   messages,
-		TotalCount: totalCount,
+		UnreadList: list,
 	}, nil
-}
-
-// MarkRead 标记消息已读
-func (n *OfflineNotifier) MarkRead(userID string, msgID int64, msg *model.Message) error {
-	// 直接持久化到数据库
-	return n.messageService.MarkRead(msgID, mustParseInt64Offline(userID))
 }
 
 // HandleUserConnect 处理用户上线，加载并发送离线通知
 func (n *OfflineNotifier) HandleUserConnect(userID string, server *WsConnServer) {
-	// 1. 从数据库获取离线通知
 	notifyData, err := n.GetOfflineNotify(userID)
 	if err != nil {
 		logger.Warn("获取离线通知失败",
@@ -69,13 +70,11 @@ func (n *OfflineNotifier) HandleUserConnect(userID string, server *WsConnServer)
 		return
 	}
 
-	// 2. 如果没有离线通知，直接返回
-	if notifyData.TotalCount == 0 {
+	if len(notifyData.UnreadList) == 0 {
 		logger.Debug("用户无离线通知", zap.String("userID", userID))
 		return
 	}
 
-	// 3. 发送离线通知
 	if err := server.SendOfflineNotify(userID, notifyData); err != nil {
 		logger.Warn("发送离线通知失败",
 			zap.String("userID", userID),
@@ -85,10 +84,14 @@ func (n *OfflineNotifier) HandleUserConnect(userID string, server *WsConnServer)
 
 	logger.Info("发送离线通知成功",
 		zap.String("userID", userID),
-		zap.Int64("count", notifyData.TotalCount))
+		zap.Int("count", len(notifyData.UnreadList)))
 }
 
-// mustParseInt64Offline 解析字符串为int64，失败返回0
+// ClearUnread 清除发送者的未读计数
+func (n *OfflineNotifier) ClearUnread(userID string, fromID int64, groupID int64) error {
+	return n.messageService.ClearUnread(mustParseInt64Offline(userID), fromID, groupID)
+}
+
 func mustParseInt64Offline(s string) int64 {
 	i, _ := strconv.ParseInt(s, 10, 64)
 	return i
