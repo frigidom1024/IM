@@ -443,12 +443,17 @@ watch(messages, () => {
 }
 .dialog input:focus { outline: none; border-color: var(--accent); }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.dialog-actions button {
-  padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--bg-3); color: var(--text); font-size: 13px; cursor: pointer;
+
+.chat-header-actions { margin-left: auto; display: flex; gap: 6px; }
+
+.member-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.member-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: var(--radius); font-size: 13px;
 }
-.dialog-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.dialog-actions button:hover { opacity: .85; }
+.member-item:hover { background: var(--bg-3); }
+.member-name { flex: 1; }
+.member-role { font-size: 10px; color: var(--text-2); font-family: 'IBM Plex Mono', monospace; }
 
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -458,12 +463,7 @@ watch(messages, () => {
 }
 @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
 
-.sidebar-actions button {
-  padding: 8px 14px; background: var(--bg-4); border: 1px solid var(--border);
-  border-radius: var(--radius); color: var(--text); font-size: 12px;
-  font-family: 'IBM Plex Mono', monospace; cursor: pointer; white-space: nowrap;
-}
-.sidebar-actions button:hover { background: var(--accent); border-color: var(--accent); }
+.sidebar-actions button { font-size: 12px; }
 
 .contacts { flex: 1; overflow-y: auto; }
 .contacts-empty { padding: 24px; text-align: center; color: var(--text-3); font-size: 13px; }
@@ -491,11 +491,26 @@ watch(messages, () => {
   padding: 2px 7px; border-radius: 10px; min-width: 20px; text-align: center;
 }
 
-.logout-btn {
-  margin: 12px 16px; padding: 10px; background: var(--bg-3); border: 1px solid var(--border);
-  border-radius: var(--radius); color: var(--text-3); font-size: 13px; cursor: pointer;
+/* ===== 统一按钮 ===== */
+.logout-btn, .sidebar-actions button, .dialog-actions button, .header-btn, .member-remove {
+  padding: 8px 14px; background: var(--bg-4); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 12px;
+  font-family: 'IBM Plex Mono', monospace; cursor: pointer; white-space: nowrap;
+  transition: all .15s;
 }
-.logout-btn:hover { color: var(--accent); border-color: var(--accent); }
+.logout-btn, .sidebar-actions button { padding: 8px 14px; }
+.dialog-actions button { padding: 8px 16px; }
+.header-btn { padding: 6px 12px; font-size: 11px; }
+.member-remove { padding: 4px 10px; font-size: 11px; }
+
+.logout-btn:hover, .sidebar-actions button:hover,
+.dialog-actions button:hover, .header-btn:hover { border-color: var(--accent); color: var(--accent); }
+.dialog-actions button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.dialog-actions button.primary:hover { background: var(--accent-2); }
+.header-btn.danger:hover { border-color: var(--accent); color: var(--accent); }
+.member-remove:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--bg); }
 
