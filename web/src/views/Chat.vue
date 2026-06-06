@@ -294,7 +294,7 @@ async function handleCreateGroup() {
 }
 
 async function handleJoinGroup() {
-  const id = parseInt(joinGroupId.value.trim())
+  const id = parseInt(String(joinGroupId.value).trim())
   if (!id) return
   try {
     await userStore.joinGroup(id)
