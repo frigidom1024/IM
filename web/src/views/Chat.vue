@@ -47,12 +47,31 @@
 
         <div class="messages" ref="messagesEl">
           <div v-for="(msg, i) in messages" :key="i" :class="['msg', msg.isMine ? 'out' : 'in']">
-            <div class="msg-content">{{ msg.content }}</div>
+            <template v-if="msg.msg_type === 'image'">
+              <img class="msg-image" :src="getFileUrl(msg.content)" alt="图片" @click="previewImage(msg.content)">
+            </template>
+            <template v-else-if="msg.msg_type === 'file'">
+              <div class="msg-file" @click="downloadFile(msg.content)">
+                <span class="file-icon">&#128196;</span>
+                <span class="file-name">{{ getFileName(msg.content) }}</span>
+              </div>
+            </template>
+            <template v-else-if="msg.msg_type === 'voice'">
+              <div class="msg-voice">
+                <span>&#128266;</span>
+                <span>{{ getVoiceDuration(msg.content) }}s</span>
+              </div>
+            </template>
+            <template v-else>
+              <div class="msg-content">{{ msg.content }}</div>
+            </template>
             <div class="msg-time">{{ formatTime(msg.created_at) }}</div>
           </div>
         </div>
 
         <div class="chat-input">
+          <input ref="fileInput" type="file" hidden @change="handleFileSelect" accept="image/*,.pdf,.zip,.doc,.docx,.mp3,.wav,.mp4">
+          <button class="upload-btn" @click="$refs.fileInput.click()" title="发送文件">&#128206;</button>
           <textarea
             v-model="inputText"
             placeholder="输入消息..."
@@ -73,12 +92,14 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { useChatStore } from '../stores/chat'
 import { wsClient } from '../api/ws'
+import { uploadApi } from '../api/upload'
 
 const router = useRouter()
 const userStore = useUserStore()
 const chatStore = useChatStore()
 
 const messagesEl = ref(null)
+const fileInput = ref(null)
 const inputText = ref('')
 const addFriendId = ref('')
 const wsConnected = ref(false)
@@ -135,6 +156,27 @@ function autoGrow(e) {
   e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
 }
 
+async function handleFileSelect(e) {
+  const file = e.target.files?.[0]
+  if (!file || !currentChat.value) return
+
+  // 按 MIME 判断类型
+  let fileType = 'file'
+  if (file.type.startsWith('image/')) fileType = 'image'
+  else if (file.type.startsWith('audio/')) fileType = 'voice'
+  else if (file.type.startsWith('video/')) fileType = 'video'
+
+  try {
+    const meta = await uploadApi.upload(file, fileType)
+    chatStore.sendMessage(meta, fileType)
+  } catch (err) {
+    console.error('[upload] failed:', err)
+    alert('上传失败: ' + (err.message || ''))
+  }
+  // 重置 input 允许重复选择同一文件
+  e.target.value = ''
+}
+
 async function handleAddFriend() {
   const id = parseInt(addFriendId.value.trim())
   if (!id) return
@@ -142,6 +184,31 @@ async function handleAddFriend() {
     await userStore.addFriend(id)
     addFriendId.value = ''
   } catch (e) { alert(e.message) }
+}
+
+function getFileUrl(raw) {
+  try {
+    const meta = JSON.parse(raw)
+    return meta.thumbnail || meta.url
+  } catch { return raw }
+}
+function getFileName(raw) {
+  try { return JSON.parse(raw).name || '文件' } catch { return '文件' }
+}
+function getVoiceDuration(raw) {
+  try { return JSON.parse(raw).duration || 0 } catch { return 0 }
+}
+function downloadFile(raw) {
+  try {
+    const meta = JSON.parse(raw)
+    if (meta.url) window.open('/api/files/' + meta.url, '_blank')
+  } catch {}
+}
+function previewImage(raw) {
+  try {
+    const meta = JSON.parse(raw)
+    if (meta.url) window.open('/api/files/' + meta.url, '_blank')
+  } catch {}
 }
 
 function handleLogout() {
@@ -271,7 +338,13 @@ watch(messages, () => {
 }
 .msg.out .msg-time { text-align: right; color: rgba(255,255,255,.5); }
 
-.chat-input { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
+.msg-image { max-width: 240px; max-height: 240px; border-radius: 8px; cursor: pointer; display: block; }
+.msg-file { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 2px 0; }
+.msg-file .file-icon { font-size: 24px; }
+.msg-file .file-name { font-size: 13px; word-break: break-all; }
+.msg-voice { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+
+.chat-input { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-end; }
 
 .chat-input textarea {
   flex: 1; padding: 10px 14px; background: var(--bg-2);
@@ -281,11 +354,14 @@ watch(messages, () => {
 }
 .chat-input textarea:focus { outline: none; border-color: var(--accent); }
 
-.send-btn {
-  width: 42px; height: 42px; background: var(--accent); border: none;
-  border-radius: var(--radius); color: #fff; font-size: 18px; cursor: pointer;
+.upload-btn, .send-btn {
+  width: 42px; height: 42px; border: none; border-radius: var(--radius);
+  font-size: 18px; cursor: pointer; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  transition: background .2s; flex-shrink: 0;
+  transition: all .2s;
 }
+.upload-btn { background: var(--bg-3); color: var(--text-2); }
+.upload-btn:hover { background: var(--bg-4); color: var(--text); }
+.send-btn { background: var(--accent); color: #fff; }
 .send-btn:hover { background: var(--accent-2); }
 </style>

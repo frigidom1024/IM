@@ -119,7 +119,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function sendMessage(content) {
+  function sendMessage(content, msgType = 'text') {
     if (!currentChat.value || !content.trim()) return
     const userStore = useUserStore()
     const chat = currentChat.value
@@ -130,8 +130,8 @@ export const useChatStore = defineStore('chat', () => {
       id: Date.now(),
       from_id: userStore.myId,
       to_id: chat.id,
-      content,
-      msg_type: 'text',
+      content: msgType === 'text' ? content : JSON.stringify(content),
+      msg_type: msgType,
       created_at: new Date().toISOString(),
       isMine: true,
       _temp: true
@@ -145,7 +145,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // 通过 WebSocket 发送
-    wsClient.sendChat(userStore.myId, chat.id, content)
+    wsClient.sendChat(userStore.myId, chat.id, msgObj.content, msgType)
   }
 
   function closeChat() {
