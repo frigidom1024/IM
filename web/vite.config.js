@@ -8,7 +8,10 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8081',
-        changeOrigin: true
+        changeOrigin: true,
+        headers: {
+          Referer: 'http://localhost:3000'
+        }
       },
       '/ws': {
         target: 'ws://localhost:8081',
