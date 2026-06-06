@@ -74,6 +74,7 @@ func NewRouter(
 				group.POST("/:groupId/join", groupHandler.Join)
 				group.DELETE("/:groupId/leave", groupHandler.Leave)
 				group.GET("/:groupId/members", groupHandler.GetMembers)
+				group.DELETE("/:groupId/members/:userId", groupHandler.RemoveMember)
 			}
 
 			// 消息路由

@@ -90,6 +90,22 @@
 
       <button class="logout-btn" @click="handleLogout">退出登录</button>
 
+      <!-- 群成员弹窗 -->
+      <div v-if="showMembers" class="dialog-overlay" @click.self="showMembers = false">
+        <div class="dialog">
+          <h3>群成员 ({{ members.length }})</h3>
+          <div class="member-list">
+            <div v-for="m in members" :key="m.user_id" class="member-item">
+              <span class="member-name">{{ m.user_id === userStore.myId ? '我' : '用户' + m.user_id }}</span>
+              <span v-if="m.role === 2" class="member-role">群主</span>
+              <span v-else-if="m.role === 1" class="member-role">管理员</span>
+              <button v-if="m.user_id !== userStore.myId" class="member-remove" @click="handleRemoveMember(m.user_id)">移除</button>
+            </div>
+          </div>
+          <div class="dialog-actions"><button @click="showMembers = false">关闭</button></div>
+        </div>
+      </div>
+
       <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
     </aside>
 
@@ -101,6 +117,10 @@
           <div class="avatar sm">{{ currentChat.name[0] }}</div>
           <span class="chat-header-name">{{ currentChat.name }}</span>
           <span class="chat-header-id">ID: {{ currentChat.id }}</span>
+          <div class="chat-header-actions">
+            <button v-if="currentChat.type === 'group'" class="header-btn" @click="showGroupMembers(currentChat.id)">成员</button>
+            <button v-if="currentChat.type === 'group'" class="header-btn danger" @click="handleLeaveGroup(currentChat.id)">退出</button>
+          </div>
         </div>
 
         <div class="messages" ref="messagesEl">
@@ -168,6 +188,9 @@ const showJoinGroup = ref(false)
 const groupName = ref('')
 const groupMax = ref(200)
 const joinGroupId = ref('')
+const showMembers = ref(false)
+const members = ref([])
+const currentGroupId = ref(null)
 
 const myId = computed(() => userStore.myId)
 const myName = computed(() => userStore.myName)
@@ -309,11 +332,36 @@ async function handleJoinGroup() {
 }
 
 let toastTimer = null
-const toastMsg = ref('')
 function showToast(msg) {
   toastMsg.value = msg
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => { toastMsg.value = '' }, 2500)
+}
+
+async function showGroupMembers(groupId) {
+  try {
+    members.value = await userStore.getGroupMembers(groupId)
+    currentGroupId.value = groupId
+    showMembers.value = true
+  } catch (e) { alert(e.message) }
+}
+
+async function handleLeaveGroup(groupId) {
+  if (!confirm('确定退出该群组？')) return
+  try {
+    await userStore.leaveGroup(groupId)
+    chatStore.closeChat()
+    showToast('已退出群组')
+  } catch (e) { alert(e.message) }
+}
+
+async function handleRemoveMember(userId) {
+  if (!confirm('确定移除该成员？')) return
+  try {
+    await userStore.removeMember(currentGroupId.value, userId)
+    members.value = members.value.filter(m => m.user_id !== userId)
+    showToast('已移除')
+  } catch (e) { alert(e.message) }
 }
 
 function handleLogout() {

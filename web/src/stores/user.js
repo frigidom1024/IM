@@ -80,6 +80,17 @@ export const useUserStore = defineStore('user', () => {
     await loadGroups()
   }
 
+  async function getGroupMembers(groupId) {
+    const res = await groupApi.getMembers(groupId)
+    if (res.code !== 0) throw new Error(res.message)
+    return res.data || []
+  }
+
+  async function removeMember(groupId, userId) {
+    const res = await groupApi.removeMember(groupId, userId)
+    if (res.code !== 0) throw new Error(res.message)
+  }
+
   async function addFriend(friendId) {
     const res = await friendApi.add({ friend_id: friendId })
     if (res.code !== 0) throw new Error(res.message)
@@ -107,6 +118,7 @@ export const useUserStore = defineStore('user', () => {
     token, user, friends, friendMap, groups,
     isLoggedIn, myId, myName,
     login, register, loadFriends, addFriend, logout,
-    loadGroups, createGroup, joinGroup, leaveGroup
+    loadGroups, createGroup, joinGroup, leaveGroup,
+    getGroupMembers, removeMember
   }
 })

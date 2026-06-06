@@ -21,7 +21,8 @@ export const groupApi = {
   create: (data) => http.post('/group/create', data),
   join: (groupId) => http.post(`/group/${groupId}/join`),
   leave: (groupId) => http.delete(`/group/${groupId}/leave`),
-  getMembers: (groupId) => http.get(`/group/${groupId}/members`)
+  getMembers: (groupId) => http.get(`/group/${groupId}/members`),
+  removeMember: (groupId, userId) => http.delete(`/group/${groupId}/members/${userId}`)
 }
 
 export const messageApi = {

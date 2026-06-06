@@ -176,3 +176,52 @@ func (h *GroupHandler) Leave(c *gin.Context) {
 		"message": "已离开群组",
 	})
 }
+
+// RemoveMember 移除群成员（群主操作）
+func (h *GroupHandler) RemoveMember(c *gin.Context) {
+	userID := c.GetInt64("userID")
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
+		return
+	}
+
+	groupIDStr := c.Param("groupId")
+	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的群组ID"})
+		return
+	}
+
+	targetIDStr := c.Param("userId")
+	targetID, err := strconv.ParseInt(targetIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的用户ID"})
+		return
+	}
+
+	if targetID == userID {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请使用退出群组操作"})
+		return
+	}
+
+	group, err := h.groupService.GetByID(groupID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "message": "群组不存在"})
+		return
+	}
+	if group.OwnerID != userID {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "message": "仅群主可移除成员"})
+		return
+	}
+
+	err = h.groupService.RemoveMember(groupID, targetID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "已移除成员",
+	})
+}
