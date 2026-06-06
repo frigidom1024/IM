@@ -3,11 +3,11 @@ package handler
 import (
 	"fmt"
 	"io"
-	"net/http"
 	"path"
 	"strings"
 	"time"
 
+	"gochat/pkg/errors"
 	"gochat/pkg/logger"
 	"gochat/pkg/minio"
 	"gochat/pkg/snowflake"
@@ -58,34 +58,32 @@ func NewUploadHandler(minioClient *minio.Client) *UploadHandler {
 func (h *UploadHandler) Upload(c *gin.Context) {
 	msgType := c.PostForm("type")
 	if msgType == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "缺少 type 参数"})
+		errors.RespondError(c, errors.New(errors.CodeUploadMissType, "缺少 type 参数"))
 		return
 	}
 
 	mimes, ok := allowedMIME[msgType]
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": fmt.Sprintf("不支持的消息类型: %s", msgType)})
+		errors.RespondError(c, errors.New(errors.CodeUploadBadType, fmt.Sprintf("不支持的消息类型: %s", msgType)))
 		return
 	}
 
 	maxSize, ok := maxSizeMap[msgType]
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的消息类型"})
+		errors.RespondError(c, errors.New(errors.CodeUploadBadType, "无效的消息类型"))
 		return
 	}
 
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "读取文件失败"})
+		errors.RespondBadRequest(c, "读取文件失败")
 		return
 	}
 	defer file.Close()
 
 	if header.Size > maxSize {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": fmt.Sprintf("文件过大，%s 类型最大允许 %dMB", msgType, maxSize>>20),
-		})
+		errors.RespondError(c, errors.New(errors.CodeUploadTooLarge,
+			fmt.Sprintf("文件过大，%s 类型最大允许 %dMB", msgType, maxSize>>20)))
 		return
 	}
 
@@ -98,10 +96,8 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		}
 	}
 	if !valid {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": fmt.Sprintf("不支持的文件类型: %s", contentType),
-		})
+		errors.RespondError(c, errors.New(errors.CodeUploadBadMIME,
+			fmt.Sprintf("不支持的文件类型: %s", contentType)))
 		return
 	}
 
@@ -116,16 +112,16 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	data, err := io.ReadAll(file)
 	if err != nil {
 		logger.Error("读取文件数据失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "读取文件失败"})
+		errors.RespondError(c, errors.New(errors.CodeUploadReadFail, "读取文件失败"))
 		return
 	}
 
 	meta, err := h.minioClient.Upload(c.Request.Context(), objectPath, strings.NewReader(string(data)), int64(len(data)), contentType)
 	if err != nil {
 		logger.Error("上传文件到 MinIO 失败", zap.String("path", objectPath), zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "上传文件失败"})
+		errors.RespondError(c, errors.New(errors.CodeUploadFail, "上传文件失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": meta})
+	errors.RespondOK(c, meta)
 }
