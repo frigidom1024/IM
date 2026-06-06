@@ -56,8 +56,8 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     if (currentChat.value && String(currentChat.value.id) === fromId) {
-      // 当前聊天窗口，自动发送已读
-      markRead(fromId)
+      // 当前聊天窗口，仅清本地未读（真实 ID 由 openChat 加载 API 后发送）
+      unreadMap.value[fromId] = 0
     } else {
       unreadMap.value[fromId] = (unreadMap.value[fromId] || 0) + 1
     }
@@ -81,9 +81,6 @@ export const useChatStore = defineStore('chat', () => {
     const key = String(id)
     currentChat.value = { id, name, type }
     unreadMap.value[key] = 0
-
-    // 发送已读回执
-    markRead(id)
 
     // 从 API 获取消息并合并缓存
     if (type === 'private') {
