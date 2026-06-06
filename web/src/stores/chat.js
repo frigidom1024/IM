@@ -120,7 +120,8 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function sendMessage(content, msgType = 'text') {
-    if (!currentChat.value || !content.trim()) return
+    if (!currentChat.value) return
+    if (msgType === 'text' && typeof content === 'string' && !content.trim()) return
     const userStore = useUserStore()
     const chat = currentChat.value
     const key = String(chat.id)
