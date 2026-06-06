@@ -16,7 +16,7 @@ type ChatMsgData struct {
 
 // MsgReadData 消息已读数据
 type MsgReadData struct {
-	MessageID int64 `json:"message_id"`
+	MessageID int64 `json:"message_id,string"`
 }
 
 // ErrorData 错误数据

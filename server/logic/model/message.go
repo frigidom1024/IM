@@ -14,7 +14,7 @@ const (
 
 // Message 消息模型
 type Message struct {
-	ID        int64     `gorm:"column:id;primaryKey" json:"id"`
+	ID        int64     `gorm:"column:id;primaryKey" json:"id,string"`
 	FromID    int64     `gorm:"column:from_id;not null;index:idx_from" json:"from_id"`
 	ToID      int64     `gorm:"column:to_id;default:0;index:idx_to" json:"to_id"`
 	GroupID   int64     `gorm:"column:group_id;default:0;index:idx_group" json:"group_id"`
