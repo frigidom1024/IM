@@ -94,6 +94,11 @@ const unreadMap = computed(() => chatStore.unreadMap)
 onMounted(() => {
   wsClient.on('open', () => { wsConnected.value = true })
   wsClient.on('close', () => { wsConnected.value = false })
+  wsClient.on('error', () => { wsConnected.value = false })
+  wsClient.on('reconnect_failed', () => {
+    wsConnected.value = false
+    console.warn('WebSocket重连失败，请刷新页面重试')
+  })
   if (wsClient.ws?.readyState === WebSocket.OPEN) wsConnected.value = true
 })
 

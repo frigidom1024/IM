@@ -14,6 +14,8 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
+	ReadBufferSize:  4096,
+	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
@@ -26,6 +28,20 @@ type wsConnection struct {
 	send      chan []byte
 	server    *WsConnServer
 	closeOnce sync.Once
+
+	// 速率限制
+	lastMsgTime time.Time
+	msgCount    int
+}
+
+func (c *wsConnection) rateLimited() bool {
+	now := time.Now()
+	if now.Sub(c.lastMsgTime) > time.Second {
+		c.msgCount = 0
+		c.lastMsgTime = now
+	}
+	c.msgCount++
+	return c.msgCount > 30 // 每秒最多30条消息
 }
 
 // WsConnServer WebSocket连接服务器实现
@@ -71,21 +87,21 @@ func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	userID := strconv.Itoa(claims.UserID)
 
-	if _, exists := s.conns.Load(userID); exists {
+	if existing, exists := s.conns.Load(userID); exists {
 		logger.Info("踢出旧连接", zap.String("userID", userID))
-		s.Disconnect(userID)
+		existing.(*wsConnection).Close()
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		logger.Warn("WebSocket升级失败", zap.Error(err))
+		logger.Warn("WebSocket升级失败", zap.String("userID", userID), zap.Error(err))
 		return
 	}
 
 	wsConn := &wsConnection{
 		conn:   conn,
 		userID: userID,
-		send:   make(chan []byte, 256),
+		send:   make(chan []byte, 64),
 		server: s,
 	}
 
@@ -200,6 +216,7 @@ func (c *wsConnection) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		c.server.conns.Delete(c.userID)
+		_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 		err = c.conn.Close()
 		close(c.send)
 
@@ -213,10 +230,10 @@ func (c *wsConnection) Close() error {
 func (c *wsConnection) readPump() {
 	defer c.Close()
 
-	c.conn.SetReadLimit(512)
-	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.conn.SetReadLimit(4096)
+	c.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		c.conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 		return nil
 	})
 
@@ -224,14 +241,24 @@ func (c *wsConnection) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				logger.Warn("WebSocket读取错误", zap.Error(err))
+				logger.Warn("WebSocket读取错误",
+					zap.String("userID", c.userID),
+					zap.Error(err))
 			}
 			break
 		}
 
+		if c.rateLimited() {
+			logger.Warn("消息频率过高，丢弃", zap.String("userID", c.userID))
+			continue
+		}
+
 		wsMsg, err := ParseWsMsg(message)
 		if err != nil {
-			logger.Warn("解析消息失败", zap.String("userID", c.userID), zap.Error(err))
+			logger.Warn("解析消息失败",
+				zap.String("userID", c.userID),
+				zap.String("raw", truncateString(string(message), 200)),
+				zap.Error(err))
 			continue
 		}
 
@@ -261,17 +288,28 @@ func (c *wsConnection) writePump() {
 			}
 
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			err := c.conn.WriteMessage(websocket.TextMessage, message)
-			if err != nil {
-				logger.Warn("WebSocket写入错误", zap.Error(err))
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				logger.Warn("WebSocket写入错误",
+					zap.String("userID", c.userID),
+					zap.Error(err))
 				return
 			}
 
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				logger.Warn("WebSocket心跳发送失败",
+					zap.String("userID", c.userID),
+					zap.Error(err))
 				return
 			}
 		}
 	}
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

@@ -5,9 +5,16 @@ class WsClient {
     this.handlers = {}
     this.reconnectTimer = null
     this.heartbeatTimer = null
+    this.pendingToken = null
+    this.messageQueue = []
+    this.reconnectAttempts = 0
+    this.maxReconnectAttempts = 10
+    this.reconnectDelay = 1000
+    this.heartbeatTimeout = null
   }
 
   connect(token) {
+    this.pendingToken = token
     if (this.ws?.readyState === WebSocket.OPEN) return
     this.disconnect()
 
@@ -18,14 +25,16 @@ class WsClient {
 
     this.ws.onopen = () => {
       console.log('[ws] connected')
+      this.reconnectAttempts = 0
+      this.reconnectDelay = 1000
       this._emit('open')
+      this._flushQueue()
       this._startHeartbeat()
     }
 
     this.ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data)
-        console.log('[ws] received:', msg)
         this._emit(msg.cmd, msg)
         this._emit('*', msg)
       } catch (err) {
@@ -33,23 +42,29 @@ class WsClient {
       }
     }
 
-    this.ws.onerror = () => this._emit('error')
+    this.ws.onerror = () => {
+      console.warn('[ws] connection error')
+      this._emit('error')
+    }
 
-    this.ws.onclose = () => {
-      console.log('[ws] closed')
+    this.ws.onclose = (e) => {
+      console.log('[ws] closed:', e.code, e.reason)
       this._emit('close')
       this._stopHeartbeat()
-      this.reconnectTimer = setTimeout(() => this.connect(token), 3000)
+      this._scheduleReconnect()
     }
   }
 
   send(msg) {
-    console.log('[ws] send:', msg)
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
-    } else {
-      console.warn('[ws] not connected, readyState:', this.ws?.readyState)
+      return true
     }
+    // 离线时入队，最多保留 20 条
+    if (this.messageQueue.length < 20) {
+      this.messageQueue.push(msg)
+    }
+    return false
   }
 
   sendChat(fromId, toId, content, msgType = 'text') {
@@ -77,25 +92,63 @@ class WsClient {
 
   disconnect() {
     clearTimeout(this.reconnectTimer)
+    clearTimeout(this.heartbeatTimeout)
     this._stopHeartbeat()
     if (this.ws) {
       this.ws.onclose = null
       this.ws.close()
     }
     this.ws = null
+    this.messageQueue = []
   }
 
-  _emit(cmd, data) {
-    ;(this.handlers[cmd] || []).forEach(h => h(data))
+  // 清理所有状态（退出登录时调用）
+  cleanup() {
+    this.disconnect()
+    this.reconnectAttempts = this.maxReconnectAttempts // 阻止重连
+    this.pendingToken = null
+  }
+
+  _flushQueue() {
+    if (this.messageQueue.length === 0) return
+    const queue = this.messageQueue.splice(0)
+    queue.forEach(msg => this.send(msg))
+  }
+
+  _scheduleReconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.warn('[ws] max reconnect attempts reached')
+      this._emit('reconnect_failed')
+      return
+    }
+    this.reconnectAttempts++
+    const delay = Math.min(this.reconnectDelay, 30000)
+    this.reconnectDelay *= 1.5 // 指数退避: 1s → 1.5s → 2.25s → ... → max 30s
+    console.log(`[ws] reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`)
+    this.reconnectTimer = setTimeout(() => {
+      if (this.pendingToken) this.connect(this.pendingToken)
+    }, delay)
   }
 
   _startHeartbeat() {
     this._stopHeartbeat()
-    this.heartbeatTimer = setInterval(() => this.ping(), 30000)
+    this.heartbeatTimer = setInterval(() => {
+      this.ping()
+      // 设置超时检测：发 ping 后 5s 内无 pong 则断开
+      this.heartbeatTimeout = setTimeout(() => {
+        console.warn('[ws] heartbeat timeout, reconnecting...')
+        this.ws?.close()
+      }, 5000)
+    }, 30000)
   }
 
   _stopHeartbeat() {
     clearInterval(this.heartbeatTimer)
+    clearTimeout(this.heartbeatTimeout)
+  }
+
+  _emit(cmd, data) {
+    ;(this.handlers[cmd] || []).forEach(h => h(data))
   }
 }
 
