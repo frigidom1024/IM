@@ -66,16 +66,18 @@ export const useChatStore = defineStore('chat', () => {
 
   // ====== 已读处理 ======
 
-  // markRead 发送已读回执（取最后一条非临时消息的真实 ID）
+  // markRead 发送已读回执
+  // 取最后一条对方发送的真实消息（非临时、非自己发送）
+  // 服务端根据此消息的 from_id 清除未读计数
   function markRead(fromId) {
     const msgs = messagesCache.value[String(fromId)]
     if (!msgs || msgs.length === 0) return
-    const realMsg = [...msgs].reverse().find(m => !m._temp)
+    const realMsg = [...msgs].reverse().find(m => !m._temp && !m.isMine)
     if (!realMsg) {
-      console.log('[markRead] no real msg found, all temp. total:', msgs.length, 'last id:', msgs[msgs.length-1]?.id)
+      console.log('[markRead] no received msg found, skip')
       return
     }
-    console.log('[markRead] sending id:', realMsg.id, 'type:', typeof realMsg.id)
+    console.log('[markRead] sending id:', realMsg.id)
     wsClient.send({
       cmd: 'msg_read',
       seq: Date.now().toString(),
