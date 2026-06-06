@@ -83,6 +83,11 @@ func (s *GroupService) GetByOwner(ownerID int64) ([]*model.Group, error) {
 	return s.groupRepo.GetByOwnerID(ownerID)
 }
 
+// GetByUser 获取用户加入的所有群组（通过群成员表）
+func (s *GroupService) GetByUser(userID int64) ([]*model.Group, error) {
+	return s.groupRepo.GetByUserID(userID)
+}
+
 // Transfer 转让群主
 func (s *GroupService) Transfer(groupID, newOwnerID int64) error {
 	return s.groupRepo.TransferOwnership(groupID, newOwnerID)

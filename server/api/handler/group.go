@@ -83,7 +83,7 @@ func (h *GroupHandler) GetList(c *gin.Context) {
 		return
 	}
 
-	groups, err := h.groupService.GetByOwner(userID)
+	groups, err := h.groupService.GetByUser(userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
 		return

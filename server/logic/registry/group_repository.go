@@ -10,6 +10,7 @@ type GroupRepository interface {
 	Create(group *model.Group) error
 	GetByID(id int64) (*model.Group, error)
 	GetByOwnerID(ownerID int64) ([]*model.Group, error)
+	GetByUserID(userID int64) ([]*model.Group, error)
 	Update(id int64, name, avatar string) error
 	Delete(id int64) error
 	TransferOwnership(groupID, newOwnerID int64) error
@@ -42,6 +43,16 @@ func (r *groupRepository) GetByID(id int64) (*model.Group, error) {
 func (r *groupRepository) GetByOwnerID(ownerID int64) ([]*model.Group, error) {
 	var groups []*model.Group
 	err := mysql.Client.Where("owner_id = ?", ownerID).Find(&groups).Error
+	return groups, err
+}
+
+// GetByUserID 获取用户加入的群组（通过群成员表关联）
+func (r *groupRepository) GetByUserID(userID int64) ([]*model.Group, error) {
+	var groups []*model.Group
+	err := mysql.Client.
+		Joins("JOIN group_member ON group_member.group_id = `group`.id").
+		Where("group_member.user_id = ?", userID).
+		Find(&groups).Error
 	return groups, err
 }
 
