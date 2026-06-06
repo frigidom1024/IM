@@ -8,7 +8,6 @@
 # Go build output
 server/bin/
 im-server
-gochat
 
 # Test binary
 *.test
@@ -32,7 +31,7 @@ Thumbs.db
 config/config-prod.yaml
 
 # Docker
-deploy/mysql/data/
+gochat/mysql/data/
 
 # Frontend
 web/node_modules/

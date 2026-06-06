@@ -16,19 +16,19 @@ test:
 
 # ========== Docker ==========
 docker-build:
-	docker compose -f deploy/docker-compose.yaml build gochat-server
+	docker compose -f gochat/docker-compose.yaml build gochat-server
 
 docker-up:
-	docker compose -f deploy/docker-compose.yaml up -d
+	docker compose -f gochat/docker-compose.yaml up -d
 
 docker-down:
-	docker compose -f deploy/docker-compose.yaml down
+	docker compose -f gochat/docker-compose.yaml down
 
 docker-logs:
-	docker compose -f deploy/docker-compose.yaml logs -f
+	docker compose -f gochat/docker-compose.yaml logs -f
 
 docker-restart:
-	docker compose -f deploy/docker-compose.yaml restart
+	docker compose -f gochat/docker-compose.yaml restart
 
 # ========== 前端开发 ==========
 dev-web:
