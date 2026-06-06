@@ -71,7 +71,11 @@ export const useChatStore = defineStore('chat', () => {
     const msgs = messagesCache.value[String(fromId)]
     if (!msgs || msgs.length === 0) return
     const realMsg = [...msgs].reverse().find(m => !m._temp)
-    if (!realMsg) return
+    if (!realMsg) {
+      console.log('[markRead] no real msg found, all temp. total:', msgs.length, 'last id:', msgs[msgs.length-1]?.id)
+      return
+    }
+    console.log('[markRead] sending id:', realMsg.id, 'type:', typeof realMsg.id)
     wsClient.send({
       cmd: 'msg_read',
       seq: Date.now().toString(),
