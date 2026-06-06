@@ -10,25 +10,81 @@
         <div :class="['conn-dot', { on: wsConnected }]"></div>
       </div>
 
-      <div class="sidebar-actions">
-        <input v-model="addFriendId" placeholder="添加好友 ID" @keydown.enter="handleAddFriend">
-        <button @click="handleAddFriend">添加</button>
+      <div class="sidebar-tabs">
+        <button :class="['tab', { active: tab === 'friends' }]" @click="tab = 'friends'">消息</button>
+        <button :class="['tab', { active: tab === 'groups' }]" @click="tab = 'groups'">群组</button>
       </div>
 
-      <div class="contacts">
-        <div v-if="!friends.length" class="contacts-empty">暂无联系人</div>
-        <div
-          v-for="f in friends"
-          :key="f.friend_id"
-          :class="['contact', { active: currentChat?.id === f.friend_id }]"
-          @click="handleOpenChat(f.friend_id)"
-        >
-          <div class="avatar">{{ getFriendName(f.friend_id)[0] }}</div>
-          <div class="contact-info">
-            <div class="contact-name">{{ getFriendName(f.friend_id) }}</div>
-            <div class="contact-sub">ID: {{ f.friend_id }}</div>
+      <!-- 好友列表 -->
+      <template v-if="tab === 'friends'">
+        <div class="sidebar-actions">
+          <input v-model="addFriendId" placeholder="添加好友 ID" @keydown.enter="handleAddFriend">
+          <button @click="handleAddFriend">添加</button>
+        </div>
+        <div class="contacts">
+          <div v-if="!friends.length" class="contacts-empty">暂无联系人</div>
+          <div
+            v-for="f in friends"
+            :key="f.friend_id"
+            :class="['contact', { active: currentChat?.id === f.friend_id && currentChat?.type === 'private' }]"
+            @click="handleOpenChat(f.friend_id)"
+          >
+            <div class="avatar">{{ getFriendName(f.friend_id)[0] }}</div>
+            <div class="contact-info">
+              <div class="contact-name">{{ getFriendName(f.friend_id) }}</div>
+              <div class="contact-sub">ID: {{ f.friend_id }}</div>
+            </div>
+            <div v-if="unreadMap[f.friend_id]" class="unread-badge">{{ unreadMap[f.friend_id] }}</div>
           </div>
-          <div v-if="unreadMap[f.friend_id]" class="unread-badge">{{ unreadMap[f.friend_id] }}</div>
+        </div>
+      </template>
+
+      <!-- 群组列表 -->
+      <template v-if="tab === 'groups'">
+        <div class="sidebar-actions">
+          <button @click="showCreateGroup = true">创建群组</button>
+          <button @click="showJoinGroup = true">加入群组</button>
+        </div>
+        <div class="contacts">
+          <div v-if="!groups.length" class="contacts-empty">暂无群组</div>
+          <div
+            v-for="g in groups"
+            :key="g.id"
+            :class="['contact', { active: currentChat?.id === g.id && currentChat?.type === 'group' }]"
+            @click="handleOpenGroup(g)"
+          >
+            <div class="avatar">{{ g.name?.[0] || 'G' }}</div>
+            <div class="contact-info">
+              <div class="contact-name">{{ g.name }}</div>
+              <div class="contact-sub">{{ g.member_count || 0 }} 人</div>
+            </div>
+            <div v-if="unreadMap['g'+g.id]" class="unread-badge">{{ unreadMap['g'+g.id] }}</div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 创建群组弹窗 -->
+      <div v-if="showCreateGroup" class="dialog-overlay" @click.self="showCreateGroup = false">
+        <div class="dialog">
+          <h3>创建群组</h3>
+          <input v-model="groupName" placeholder="群组名称" @keydown.enter="handleCreateGroup">
+          <input v-model="groupMax" type="number" placeholder="最大成员数(默认200)" @keydown.enter="handleCreateGroup">
+          <div class="dialog-actions">
+            <button @click="showCreateGroup = false">取消</button>
+            <button class="primary" @click="handleCreateGroup">创建</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 加入群组弹窗 -->
+      <div v-if="showJoinGroup" class="dialog-overlay" @click.self="showJoinGroup = false">
+        <div class="dialog">
+          <h3>加入群组</h3>
+          <input v-model="joinGroupId" type="number" placeholder="群组 ID" @keydown.enter="handleJoinGroup">
+          <div class="dialog-actions">
+            <button @click="showJoinGroup = false">取消</button>
+            <button class="primary" @click="handleJoinGroup">加入</button>
+          </div>
         </div>
       </div>
 
@@ -104,10 +160,18 @@ const inputText = ref('')
 const addFriendId = ref('')
 const wsConnected = ref(false)
 
+const tab = ref('friends')
+const showCreateGroup = ref(false)
+const showJoinGroup = ref(false)
+const groupName = ref('')
+const groupMax = ref(200)
+const joinGroupId = ref('')
+
 const myId = computed(() => userStore.myId)
 const myName = computed(() => userStore.myName)
 const friends = computed(() => userStore.friends)
 const friendMap = computed(() => userStore.friendMap)
+const groups = computed(() => userStore.groups)
 const currentChat = computed(() => chatStore.currentChat)
 const messages = computed(() => chatStore.currentMessages)
 const unreadMap = computed(() => chatStore.unreadMap)
@@ -211,6 +275,35 @@ function previewImage(raw) {
   } catch {}
 }
 
+function handleOpenGroup(g) {
+  chatStore.openChat(g.id, g.name, 'group')
+  nextTick(() => {
+    if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
+  })
+}
+
+async function handleCreateGroup() {
+  if (!groupName.value.trim()) return
+  try {
+    const group = await userStore.createGroup(groupName.value.trim(), groupMax.value || 200)
+    showCreateGroup.value = false
+    groupName.value = ''
+    groupMax.value = 200
+    tab.value = 'groups'
+  } catch (e) { alert(e.message) }
+}
+
+async function handleJoinGroup() {
+  const id = parseInt(joinGroupId.value.trim())
+  if (!id) return
+  try {
+    await userStore.joinGroup(id)
+    showJoinGroup.value = false
+    joinGroupId.value = ''
+    tab.value = 'groups'
+  } catch (e) { alert(e.message) }
+}
+
 function handleLogout() {
   userStore.logout()
   router.push('/login')
@@ -265,6 +358,37 @@ watch(messages, () => {
   font-family: 'IBM Plex Mono', monospace; font-size: 12px;
 }
 .sidebar-actions input:focus { outline: none; border-color: var(--accent); }
+
+.sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.sidebar-tabs .tab {
+  flex: 1; padding: 10px 0; background: none; border: none;
+  border-bottom: 2px solid transparent; color: var(--text-2);
+  font-family: 'IBM Plex Mono', monospace; font-size: 13px; cursor: pointer;
+  transition: all .2s;
+}
+.sidebar-tabs .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.dialog-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.dialog {
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 24px; width: 340px; display: flex; flex-direction: column; gap: 12px;
+}
+.dialog h3 { font-size: 16px; font-weight: 600; color: var(--text); margin: 0; }
+.dialog input {
+  padding: 10px 12px; background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 14px;
+}
+.dialog input:focus { outline: none; border-color: var(--accent); }
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.dialog-actions button {
+  padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-3); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.dialog-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dialog-actions button:hover { opacity: .85; }
 
 .sidebar-actions button {
   padding: 8px 14px; background: var(--bg-4); border: 1px solid var(--border);

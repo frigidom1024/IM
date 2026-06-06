@@ -61,6 +61,7 @@ class WsClient {
   }
 
   send(msg) {
+    console.log('[ws] >>', msg.cmd, msg.seq || '', JSON.stringify(msg.data).slice(0, 200))
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
       return true
@@ -72,11 +73,11 @@ class WsClient {
     return false
   }
 
-  sendChat(fromId, toId, content, msgType = 'text') {
+  sendChat(fromId, toId, content, msgType = 'text', groupId = 0) {
     this.send({
       cmd: 'msg',
       seq: Date.now().toString(),
-      data: { from_id: fromId, to_id: toId, group_id: 0, type: msgType, content }
+      data: { from_id: fromId, to_id: groupId > 0 ? 0 : toId, group_id: groupId, type: msgType, content }
     })
   }
 

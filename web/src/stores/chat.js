@@ -36,13 +36,16 @@ export const useChatStore = defineStore('chat', () => {
     const data = msg.data
     if (!data) return
 
-    const fromId = String(data.from_id)
     const userStore = useUserStore()
+    const isGroup = data.group_id > 0
+    const cacheKey = isGroup ? 'g' + data.group_id : String(data.from_id)
+    const chatKey = currentChat.value ? (currentChat.value.type === 'group' ? 'g' + currentChat.value.id : String(currentChat.value.id)) : ''
 
     const msgObj = {
       id: Date.now(),
       from_id: data.from_id,
       to_id: data.to_id,
+      group_id: data.group_id,
       content: data.content,
       msg_type: data.type,
       created_at: new Date().toISOString(),
@@ -50,17 +53,16 @@ export const useChatStore = defineStore('chat', () => {
       _temp: true
     }
 
-    if (!messagesCache.value[fromId]) {
-      messagesCache.value = { ...messagesCache.value, [fromId]: [msgObj] }
+    if (!messagesCache.value[cacheKey]) {
+      messagesCache.value = { ...messagesCache.value, [cacheKey]: [msgObj] }
     } else {
-      messagesCache.value = { ...messagesCache.value, [fromId]: [...messagesCache.value[fromId], msgObj] }
+      messagesCache.value = { ...messagesCache.value, [cacheKey]: [...messagesCache.value[cacheKey], msgObj] }
     }
 
-    if (currentChat.value && String(currentChat.value.id) === fromId) {
-      // 当前聊天窗口，仅清本地未读（真实 ID 由 openChat 加载 API 后发送）
-      unreadMap.value[fromId] = 0
+    if (currentChat.value && chatKey === cacheKey) {
+      unreadMap.value[cacheKey] = 0
     } else {
-      unreadMap.value[fromId] = (unreadMap.value[fromId] || 0) + 1
+      unreadMap.value[cacheKey] = (unreadMap.value[cacheKey] || 0) + 1
     }
   })
 
@@ -90,32 +92,28 @@ export const useChatStore = defineStore('chat', () => {
     currentChat.value = { id, name, type }
     unreadMap.value[key] = 0
 
-    // 从 API 获取消息并合并缓存
-    if (type === 'private') {
-      try {
-        const res = await messageApi.getPrivate(id)
-        if (res.code === 0 && res.data) {
-          const userStore = useUserStore()
-          const apiMsgs = res.data || []
-          const cachedMsgs = messagesCache.value[key] || []
-          const merged = [...cachedMsgs]
-          for (const msg of apiMsgs) {
-            const exists = merged.some(m => m.id === msg.id || (m.created_at === msg.created_at && m.content === msg.content))
-            if (!exists) {
-              merged.push({
-                ...msg,
-                isMine: msg.from_id === userStore.myId
-              })
-            }
+    try {
+      const res = type === 'group' ? await messageApi.getGroup(id) : await messageApi.getPrivate(id)
+      if (res.code === 0 && res.data) {
+        const userStore = useUserStore()
+        const apiMsgs = res.data || []
+        const cachedMsgs = messagesCache.value[key] || []
+        const merged = [...cachedMsgs]
+        for (const msg of apiMsgs) {
+          const exists = merged.some(m => m.id === msg.id || (m.created_at === msg.created_at && m.content === msg.content))
+          if (!exists) {
+            merged.push({
+              ...msg,
+              isMine: msg.from_id === userStore.myId
+            })
           }
-          merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-          messagesCache.value = { ...messagesCache.value, [key]: merged }
-          // API 消息加载完后重新发已读（确保拿到真实 message_id）
-          markRead(id)
         }
-      } catch (e) {
-        console.error('loadMessages:', e)
+        merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+        messagesCache.value = { ...messagesCache.value, [key]: merged }
+        markRead(id)
       }
+    } catch (e) {
+      console.error('loadMessages:', e)
     }
   }
 
@@ -145,8 +143,9 @@ export const useChatStore = defineStore('chat', () => {
       messagesCache.value = { ...messagesCache.value, [key]: [...messagesCache.value[key], msgObj] }
     }
 
-    // 通过 WebSocket 发送
-    wsClient.sendChat(userStore.myId, chat.id, msgObj.content, msgType)
+    // 通过 WebSocket 发送（群聊传 groupId）
+    const groupId = chat.type === 'group' ? chat.id : 0
+    wsClient.sendChat(userStore.myId, chat.id, msgObj.content, msgType, groupId)
   }
 
   function closeChat() {
