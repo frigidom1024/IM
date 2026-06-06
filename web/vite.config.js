@@ -17,6 +17,10 @@ export default defineConfig({
         target: 'ws://localhost:8081',
         ws: true,
         changeOrigin: true
+      },
+      '^/(images|files|voices|videos|thumbnails)/': {
+        target: 'http://localhost:8081',
+        changeOrigin: true
       }
     }
   }
