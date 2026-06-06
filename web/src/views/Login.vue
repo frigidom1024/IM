@@ -108,9 +108,9 @@ async function submit() {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  color: var(--text-3);
+  color: var(--text-2);
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   transition: all .2s;
 }
@@ -124,8 +124,8 @@ async function submit() {
 .field label {
   display: block;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px;
-  color: var(--text-3);
+  font-size: 12px;
+  color: var(--text-2);
   margin-bottom: 5px;
   text-transform: uppercase;
   letter-spacing: .5px;

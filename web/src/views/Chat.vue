@@ -176,7 +176,7 @@ watch(messages, () => {
 
 .my-info { flex: 1; min-width: 0; }
 .my-name { font-size: 14px; font-weight: 600; }
-.my-id { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-3); }
+.my-id { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-2); }
 
 .conn-dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -220,7 +220,7 @@ watch(messages, () => {
 
 .contact-info { flex: 1; min-width: 0; }
 .contact-name { font-size: 14px; font-weight: 500; }
-.contact-sub { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-3); }
+.contact-sub { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-2); }
 
 .unread-badge {
   background: var(--accent); color: #fff; font-size: 11px; font-weight: 600;
