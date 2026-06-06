@@ -16,7 +16,22 @@ export const useChatStore = defineStore('chat', () => {
     return [...msgs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
   })
 
-  // 监听 WebSocket 收到的消息
+  // ====== WebSocket 事件监听 ======
+
+  // 离线通知：登录后服务端推送的未读汇总
+  wsClient.on('offline_notify', (msg) => {
+    const list = msg.data?.unread_list
+    if (!list) return
+    const map = {}
+    for (const item of list) {
+      if (item.from_id > 0) {
+        map[String(item.from_id)] = item.count
+      }
+    }
+    unreadMap.value = { ...unreadMap.value, ...map }
+  })
+
+  // 实时消息
   wsClient.on('msg', (msg) => {
     const data = msg.data
     if (!data) return
@@ -24,7 +39,6 @@ export const useChatStore = defineStore('chat', () => {
     const fromId = String(data.from_id)
     const userStore = useUserStore()
 
-    // 构建消息对象
     const msgObj = {
       id: Date.now(),
       from_id: data.from_id,
@@ -35,26 +49,41 @@ export const useChatStore = defineStore('chat', () => {
       isMine: false
     }
 
-    // 缓存消息（通过重新赋值触发 Vue 响应式）
     if (!messagesCache.value[fromId]) {
       messagesCache.value = { ...messagesCache.value, [fromId]: [msgObj] }
     } else {
       messagesCache.value = { ...messagesCache.value, [fromId]: [...messagesCache.value[fromId], msgObj] }
     }
 
-    // 如果是当前聊天窗口的消息，Vue 会自动响应
     if (currentChat.value && String(currentChat.value.id) === fromId) {
-      // 当前窗口，什么都不做，Vue 自动更新
+      // 当前聊天窗口，自动发送已读
+      markRead(fromId)
     } else {
-      // 非当前窗口消息，计入未读
       unreadMap.value[fromId] = (unreadMap.value[fromId] || 0) + 1
     }
   })
+
+  // ====== 已读处理 ======
+
+  // markRead 发送已读回执
+  function markRead(fromId) {
+    const msgs = messagesCache.value[String(fromId)]
+    if (!msgs || msgs.length === 0) return
+    const lastMsg = msgs[msgs.length - 1]
+    wsClient.send({
+      cmd: 'msg_read',
+      seq: Date.now().toString(),
+      data: { message_id: lastMsg.id }
+    })
+  }
 
   async function openChat(id, name, type = 'private') {
     const key = String(id)
     currentChat.value = { id, name, type }
     unreadMap.value[key] = 0
+
+    // 发送已读回执
+    markRead(id)
 
     // 从 API 获取消息并合并缓存
     if (type === 'private') {
@@ -62,11 +91,8 @@ export const useChatStore = defineStore('chat', () => {
         const res = await messageApi.getPrivate(id)
         if (res.code === 0 && res.data) {
           const userStore = useUserStore()
-          // API 返回的消息
           const apiMsgs = res.data || []
-          // 已有缓存的消息（来自 WebSocket）
           const cachedMsgs = messagesCache.value[key] || []
-          // 合并去重（按 id 或 created_at + content）
           const merged = [...cachedMsgs]
           for (const msg of apiMsgs) {
             const exists = merged.some(m => m.id === msg.id || (m.created_at === msg.created_at && m.content === msg.content))
@@ -77,13 +103,13 @@ export const useChatStore = defineStore('chat', () => {
               })
             }
           }
-          // 按时间升序排列
           merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
           messagesCache.value = { ...messagesCache.value, [key]: merged }
+          // API 消息加载完后重新发已读（确保拿到真实 message_id）
+          markRead(id)
         }
       } catch (e) {
         console.error('loadMessages:', e)
-        // 保留缓存，不覆盖
       }
     }
   }
@@ -137,6 +163,7 @@ export const useChatStore = defineStore('chat', () => {
     sendMessage,
     closeChat,
     getUnreadCount,
-    clearMessages
+    clearMessages,
+    markRead
   }
 })
