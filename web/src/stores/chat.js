@@ -100,7 +100,7 @@ export const useChatStore = defineStore('chat', () => {
       from_id: userStore.myId,
       to_id: chat.id,
       content,
-      msg_type: 1,
+      msg_type: 'text',
       created_at: new Date().toISOString(),
       isMine: true
     }

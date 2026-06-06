@@ -52,7 +52,7 @@ class WsClient {
     }
   }
 
-  sendChat(fromId, toId, content, msgType = 1) {
+  sendChat(fromId, toId, content, msgType = 'text') {
     this.send({
       cmd: 'msg',
       seq: Date.now().toString(),
