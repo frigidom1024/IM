@@ -41,6 +41,7 @@ export const useChatStore = defineStore('chat', () => {
     const cacheKey = isGroup ? 'g' + data.group_id : String(data.from_id)
     const chatKey = currentChat.value ? (currentChat.value.type === 'group' ? 'g' + currentChat.value.id : String(currentChat.value.id)) : ''
 
+    const senderName = userStore.friendMap[data.from_id]?.nickname || userStore.friendMap[data.from_id]?.username || ''
     const msgObj = {
       id: Date.now(),
       from_id: data.from_id,
@@ -50,6 +51,7 @@ export const useChatStore = defineStore('chat', () => {
       msg_type: data.type,
       created_at: new Date().toISOString(),
       isMine: false,
+      sender_name: senderName,
       _temp: true
     }
 
@@ -104,7 +106,8 @@ export const useChatStore = defineStore('chat', () => {
           if (!exists) {
             merged.push({
               ...msg,
-              isMine: msg.from_id === userStore.myId
+              isMine: msg.from_id === userStore.myId,
+              sender_name: msg.sender_name || userStore.friendMap[msg.from_id]?.nickname || userStore.friendMap[msg.from_id]?.username || ''
             })
           }
         }
