@@ -89,6 +89,8 @@
       </div>
 
       <button class="logout-btn" @click="handleLogout">退出登录</button>
+
+      <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
     </aside>
 
     <main class="chat-area">
@@ -290,6 +292,7 @@ async function handleCreateGroup() {
     groupName.value = ''
     groupMax.value = 200
     tab.value = 'groups'
+    showToast('群组创建成功')
   } catch (e) { alert(e.message) }
 }
 
@@ -301,7 +304,16 @@ async function handleJoinGroup() {
     showJoinGroup.value = false
     joinGroupId.value = ''
     tab.value = 'groups'
+    showToast('已加入群组')
   } catch (e) { alert(e.message) }
+}
+
+let toastTimer = null
+const toastMsg = ref('')
+function showToast(msg) {
+  toastMsg.value = msg
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toastMsg.value = '' }, 2500)
 }
 
 function handleLogout() {
@@ -389,6 +401,14 @@ watch(messages, () => {
 }
 .dialog-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .dialog-actions button:hover { opacity: .85; }
+
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--bg-4); color: var(--text); padding: 10px 20px;
+  border-radius: 8px; font-size: 13px; z-index: 200;
+  animation: toastIn .2s ease;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
 
 .sidebar-actions button {
   padding: 8px 14px; background: var(--bg-4); border: 1px solid var(--border);
