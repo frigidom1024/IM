@@ -240,8 +240,12 @@ func (c *wsConnection) readPump() {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				logger.Warn("WebSocket读取错误",
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				logger.Warn("WebSocket异常关闭",
+					zap.String("userID", c.userID),
+					zap.Error(err))
+			} else {
+				logger.Debug("WebSocket连接关闭",
 					zap.String("userID", c.userID),
 					zap.Error(err))
 			}
