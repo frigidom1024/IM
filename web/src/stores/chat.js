@@ -46,7 +46,8 @@ export const useChatStore = defineStore('chat', () => {
       content: data.content,
       msg_type: data.type,
       created_at: new Date().toISOString(),
-      isMine: false
+      isMine: false,
+      _temp: true
     }
 
     if (!messagesCache.value[fromId]) {
@@ -65,15 +66,16 @@ export const useChatStore = defineStore('chat', () => {
 
   // ====== 已读处理 ======
 
-  // markRead 发送已读回执
+  // markRead 发送已读回执（取最后一条非临时消息的真实 ID）
   function markRead(fromId) {
     const msgs = messagesCache.value[String(fromId)]
     if (!msgs || msgs.length === 0) return
-    const lastMsg = msgs[msgs.length - 1]
+    const realMsg = [...msgs].reverse().find(m => !m._temp)
+    if (!realMsg) return
     wsClient.send({
       cmd: 'msg_read',
       seq: Date.now().toString(),
-      data: { message_id: lastMsg.id }
+      data: { message_id: realMsg.id }
     })
   }
 
@@ -125,7 +127,8 @@ export const useChatStore = defineStore('chat', () => {
       content,
       msg_type: 'text',
       created_at: new Date().toISOString(),
-      isMine: true
+      isMine: true,
+      _temp: true
     }
 
     // 缓存消息（通过重新赋值触发 Vue 响应式）
