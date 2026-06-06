@@ -16,6 +16,8 @@ class WsClient {
   connect(token) {
     this.pendingToken = token
     if (this.ws?.readyState === WebSocket.OPEN) return
+    if (this._connecting) return // 防止并发重连
+    this._connecting = true
     this.disconnect()
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -25,6 +27,7 @@ class WsClient {
 
     this.ws.onopen = () => {
       console.log('[ws] connected')
+      this._connecting = false
       this.reconnectAttempts = 0
       this.reconnectDelay = 1000
       this._emit('open')
@@ -35,10 +38,11 @@ class WsClient {
     this.ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data)
+        console.log('[ws] <<', msg.cmd, msg.seq || '', typeof msg.data === 'object' ? JSON.stringify(msg.data).slice(0, 200) : msg.data)
         this._emit(msg.cmd, msg)
         this._emit('*', msg)
       } catch (err) {
-        console.error('[ws] parse error:', err)
+        console.error('[ws] parse error:', err, e.data.slice(0, 200))
       }
     }
 
@@ -49,6 +53,7 @@ class WsClient {
 
     this.ws.onclose = (e) => {
       console.log('[ws] closed:', e.code, e.reason)
+      this._connecting = false
       this._emit('close')
       this._stopHeartbeat()
       this._scheduleReconnect()
