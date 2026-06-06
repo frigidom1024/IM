@@ -1,6 +1,9 @@
 # ===== Build Stage =====
 FROM golang:1.25-alpine AS builder
 
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=$GOPROXY
+
 WORKDIR /build
 
 # 先拷贝依赖文件以利用 Docker 缓存层
