@@ -24,10 +24,10 @@ const (
 )
 
 const (
-	maxImageSize = 10 << 20  // 10MB
-	maxFileSize  = 100 << 20 // 100MB
-	maxVoiceSize = 10 << 20  // 10MB
-	maxVideoSize = 200 << 20 // 200MB
+	maxImageSize = 50 << 20  // 50MB
+	maxFileSize  = 500 << 20 // 500MB
+	maxVoiceSize = 50 << 20  // 50MB
+	maxVideoSize = 1024 << 20 // 1GB
 )
 
 var allowedMIME = map[string][]string{
