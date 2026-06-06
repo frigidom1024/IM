@@ -125,7 +125,7 @@
 
         <div class="messages" ref="messagesEl">
           <div v-for="(msg, i) in messages" :key="i" :class="['msg', msg.isMine ? 'out' : 'in']">
-            <div v-if="!msg.isMine && currentChat?.type === 'group'" class="msg-sender">{{ msg.sender_name || '用户' + msg.from_id }}</div>
+            <div v-if="!msg.isMine" class="msg-sender">{{ msg.sender_name || '用户' + msg.from_id }}</div>
             <template v-if="msg.msg_type === 'image'">
               <img class="msg-image" :src="getFileUrl(msg.content)" alt="图片" @click="previewImage(msg.content)">
             </template>
