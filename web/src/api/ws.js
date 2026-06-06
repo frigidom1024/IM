@@ -132,19 +132,30 @@ class WsClient {
 
   _startHeartbeat() {
     this._stopHeartbeat()
+
+    // 收到任何消息视为连接正常，重置超时
+    this._offHeartbeatMsg = this.on('*', () => {
+      clearTimeout(this.heartbeatTimeout)
+      this.heartbeatTimeout = null
+    })
+
     this.heartbeatTimer = setInterval(() => {
       this.ping()
-      // 设置超时检测：发 ping 后 5s 内无 pong 则断开
       this.heartbeatTimeout = setTimeout(() => {
         console.warn('[ws] heartbeat timeout, reconnecting...')
         this.ws?.close()
-      }, 5000)
+      }, 8000)
     }, 30000)
   }
 
   _stopHeartbeat() {
     clearInterval(this.heartbeatTimer)
     clearTimeout(this.heartbeatTimeout)
+    this.heartbeatTimeout = null
+    if (this._offHeartbeatMsg) {
+      this._offHeartbeatMsg()
+      this._offHeartbeatMsg = null
+    }
   }
 
   _emit(cmd, data) {
