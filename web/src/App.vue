@@ -11,12 +11,12 @@
   --bg-3: #1c1c1c;
   --bg-4: #252525;
   --text: #e8e8e8;
-  --text-2: #888;
-  --text-3: #555;
+  --text-2: #adadad;
+  --text-3: #888;
   --accent: #e85d3a;
   --accent-2: #ff7a57;
   --green: #3dd68c;
-  --border: #222;
+  --border: #2a2a2a;
   --radius: 6px;
 }
 

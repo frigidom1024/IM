@@ -209,7 +209,7 @@ watch(messages, () => {
   cursor: pointer; border-bottom: 1px solid var(--border); transition: background .15s;
 }
 .contact:hover { background: var(--bg-3); }
-.contact.active { background: var(--bg-4); border-left: 3px solid var(--accent); }
+.contact.active { background: color-mix(in srgb, var(--accent) 8%, var(--bg-4)); }
 
 .avatar {
   width: 38px; height: 38px; border-radius: 50%;
