@@ -33,7 +33,7 @@ func NewRouter(
 	userHandler := handler.NewUserHandler(userRepo)
 	friendHandler := handler.NewFriendHandler(friendRepo)
 	groupHandler := handler.NewGroupHandler(groupRepo, groupMemberRepo)
-	messageHandler := handler.NewMessageHandler(messageRepo, messageReadRepo)
+	messageHandler := handler.NewMessageHandler(messageRepo, messageReadRepo, userRepo)
 	uploadHandler := handler.NewUploadHandler(minioClient)
 
 	// API路由组
