@@ -6,6 +6,7 @@ import (
 
 	"gochat/connect"
 	"gochat/logic/model"
+	"gochat/pkg/errors"
 	"gochat/pkg/logger"
 	"gochat/pkg/snowflake"
 
@@ -32,18 +33,19 @@ func NewChatHandler(msgSvc connect.MessageService, groupSvc connect.GroupService
 func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Message) error {
 	raw, ok := msg.(*connect.RawMessage)
 	if !ok {
-		return connect.ErrInvalidDataType
+		return errors.New(errors.CodeWsInvalidMsg, "消息格式无效")
 	}
 
 	chatData, err := raw.GetChatMsgData()
 	if err != nil {
 		logger.Warn("解析聊天消息失败", zap.String("userID", userID), zap.Error(err))
+		SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsInvalidMsg, "解析消息失败"))
 		return err
 	}
 
 	if err := chatData.Validate(); err != nil {
 		logger.Warn("消息格式验证失败", zap.String("userID", userID), zap.Error(err))
-		h.sendError(userID, msg.Seq(), 1001, err.Error())
+		SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsInvalidMsg, err.Error()))
 		return err
 	}
 
@@ -64,7 +66,7 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 
 	if err := h.msgSvc.Send(msgModel); err != nil {
 		logger.Error("保存消息失败", zap.String("userID", userID), zap.Error(err))
-		h.sendError(userID, msg.Seq(), 2001, "消息发送失败")
+		SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsSendFailed, "消息发送失败"))
 		return err
 	}
 
@@ -90,12 +92,6 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 	}
 
 	return nil
-}
-
-func (h *ChatHandler) sendError(userID, seq string, code int, message string) {
-	errorMsg := connect.NewErrorMsg(code, message)
-	errorMsg.SeqStr = seq
-	h.connSvr.Send(userID, errorMsg)
 }
 
 func (h *ChatHandler) sendMsgAck(userID, seq string, messageID int64) {

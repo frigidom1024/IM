@@ -58,3 +58,12 @@ const (
 	CodeGroupFull     = 45010 // 群组已满
 	CodeGroupMember   = 45011 // 已是群成员
 )
+
+// WebSocket 模块 490xx
+const (
+	CodeWsInvalidMsg  = 49001 // 消息格式无效
+	CodeWsSendFailed  = 49002 // 消息发送失败
+	CodeWsNotFound    = 49004 // 消息不存在
+	CodeWsOffline     = 49005 // 用户不在线
+	CodeWsQueueFull   = 49006 // 发送队列已满
+)

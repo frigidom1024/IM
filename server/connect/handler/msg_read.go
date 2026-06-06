@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gochat/connect"
+	"gochat/pkg/errors"
 	"gochat/pkg/logger"
 
 	"go.uber.org/zap"
@@ -27,16 +28,15 @@ func NewMsgReadHandler(msgSvc connect.MessageService, clearer connect.UnreadClea
 
 // Handle 处理消息已读
 func (h *MsgReadHandler) Handle(ctx context.Context, userID string, msg connect.Message) error {
-	// ParseWsMsg 已提前反序列化 Data 为 *MsgReadData
 	raw, ok := msg.(*connect.RawMessage)
 	if !ok {
-		return connect.ErrInvalidDataType
+		return errors.New(errors.CodeWsInvalidMsg, "消息格式无效")
 	}
 
 	readData, ok := raw.Data.(*connect.MsgReadData)
 	if !ok {
 		logger.Warn("解析消息已读数据失败", zap.String("userID", userID))
-		h.sendError(userID, msg.Seq(), 1001, "无效的消息ID")
+		SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsInvalidMsg, "无效的消息ID"))
 		return nil
 	}
 
@@ -44,7 +44,7 @@ func (h *MsgReadHandler) Handle(ctx context.Context, userID string, msg connect.
 	msgModel, err := h.msgSvc.GetByID(messageID)
 	if err != nil {
 		logger.Warn("获取消息失败", zap.Int64("messageID", messageID), zap.Error(err))
-		h.sendError(userID, msg.Seq(), 2001, "消息不存在")
+		SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsNotFound, "消息不存在"))
 		return nil
 	}
 
@@ -58,10 +58,4 @@ func (h *MsgReadHandler) Handle(ctx context.Context, userID string, msg connect.
 
 	logger.Debug("消息已读", zap.String("userID", userID), zap.Int64("messageID", messageID))
 	return nil
-}
-
-func (h *MsgReadHandler) sendError(userID, seq string, code int, message string) {
-	errorMsg := connect.NewErrorMsg(code, message)
-	errorMsg.SeqStr = seq
-	h.connSvr.Send(userID, errorMsg)
 }
