@@ -90,14 +90,15 @@ auth:
 
 ### GoChat user 表
 
-保持现有 `user` 表不变，增加 `external_id` 字段关联外部用户：
+**不改任何表结构**。使用现有 `user` 表的字段：
 
-```sql
-ALTER TABLE user ADD COLUMN external_id VARCHAR(64) DEFAULT '' AFTER id;
-ALTER TABLE user ADD UNIQUE INDEX idx_external_id (external_id);
-```
+| 字段 | 用途 |
+|------|------|
+| `username` | `ext_{外部ID}` — 外部用户标识，避免与注册用户冲突 |
+| `nickname` | 外部返回的显示名称 |
+| `avatar` | 头像 URL |
 
-认证时通过 `external_id` 查找或创建用户记录，`user.id` 仍作为内部关联主键。
+认证时按 `username = ext_{id}` 查找，不存在则创建。
 
 ---
 

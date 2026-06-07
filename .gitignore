@@ -36,3 +36,6 @@ gochat/mysql/data/
 # Frontend
 web/node_modules/
 web/dist/
+
+.playwright-mcp/
+web/core/dist/
