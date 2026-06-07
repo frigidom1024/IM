@@ -78,6 +78,8 @@ func main() {
 		messageRepo,
 		messageReadRepo,
 		minioClient,
+		cfg.Auth.Mode,
+		cfg.Auth.ExternalUserAPI,
 	)
 
 	// 启动WebSocket服务器

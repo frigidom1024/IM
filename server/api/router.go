@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"gochat/api/handler"
 	"gochat/api/middleware"
 	"gochat/logic/registry"
@@ -23,11 +25,18 @@ func NewRouter(
 	messageRepo registry.MessageRepository,
 	messageReadRepo registry.MessageReadRepository,
 	minioClient *minio.Client,
+	authMode string,
+	authExternalAPI string,
 ) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(middleware.CORS())
 	engine.Use(gin.Logger(), gin.Recovery())
+
+	// 健康检查
+	engine.GET("/healthz", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok", "time": time.Now().Unix()})
+	})
 
 	// 创建处理器
 	userHandler := handler.NewUserHandler(userRepo)
@@ -39,9 +48,12 @@ func NewRouter(
 	// API路由组
 	api := engine.Group("/api")
 	{
-		// 认证路由（无需登录）
+		// 认证路由
 		auth := api.Group("/auth")
-		{
+		if authMode == "external" {
+			authHandler := handler.NewExternalAuthHandler(userRepo, authExternalAPI)
+			auth.POST("", authHandler.ExternalAuth)
+		} else {
 			auth.POST("/register", userHandler.Register)
 			auth.POST("/login", userHandler.Login)
 		}
@@ -90,11 +102,6 @@ func NewRouter(
 			protected.POST("/upload", uploadHandler.Upload)
 		}
 	}
-
-	// 健康检查
-	engine.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
 
 	return &Router{engine: engine}
 }
