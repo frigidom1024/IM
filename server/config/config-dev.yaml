@@ -28,6 +28,10 @@ minio:
   bucket: gochat
   use_ssl: false
 
+auth:
+  mode: "builtin"
+  external_user_api: ""
+
 jwt:
   secret: "gochat-secret-key-change-in-production"
   expire_time: 24 # 24小时

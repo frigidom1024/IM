@@ -7,9 +7,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// AuthConfig 认证配置
+type AuthConfig struct {
+	Mode            string `yaml:"mode"`              // builtin | external
+	ExternalUserAPI string `yaml:"external_user_api"` // 外部用户信息API
+}
+
 // Config 全局配置
 type Config struct {
 	Server ServerConfig `yaml:"server"`
+	Auth   AuthConfig   `yaml:"auth"`
 	MySQL  MySQLConfig  `yaml:"mysql"`
 	Redis  RedisConfig  `yaml:"redis"`
 	Etcd   EtcdConfig   `yaml:"etcd"`
