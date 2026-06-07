@@ -26,6 +26,20 @@ export const useUserStore = defineStore('user', () => {
     loadGroups()
   }
 
+  async function externalAuth(externalToken) {
+    const http = (await import('../api/http')).default
+    const res = await http.post('/auth', null, {
+      headers: { Authorization: externalToken }
+    })
+    if (res.code !== 0) throw new Error(res.message)
+    token.value = res.data.token
+    user.value = res.data.user
+    localStorage.setItem('token', res.data.token)
+    localStorage.setItem('user', JSON.stringify(res.data.user))
+    wsClient.connect(res.data.token)
+    loadFriends()
+  }
+
   async function register(username, password, nickname) {
     const res = await authApi.register({ username, password, nickname })
     if (res.code !== 0) throw new Error(res.message)
@@ -117,7 +131,7 @@ export const useUserStore = defineStore('user', () => {
   return {
     token, user, friends, friendMap, groups,
     isLoggedIn, myId, myName,
-    login, register, loadFriends, addFriend, logout,
+    login, register, externalAuth, loadFriends, addFriend, logout,
     loadGroups, createGroup, joinGroup, leaveGroup,
     getGroupMembers, removeMember
   }
