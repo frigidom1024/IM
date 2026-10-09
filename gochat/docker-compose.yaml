@@ -70,7 +70,7 @@ services:
     image: ${SERVER_IMAGE}
     container_name: gochat-server
     build:
-      context: ../server
+      context: ..
       dockerfile: Dockerfile
     restart: always
     depends_on:
@@ -81,7 +81,7 @@ services:
       etcd:
         condition: service_started
     volumes:
-      - ./server/config-dev.yaml:/app/config/config-dev.yaml
+      - ../internal/config/config-dev.yaml:/app/internal/config/config-dev.yaml
     environment:
       - TZ=Asia/Shanghai
     networks:

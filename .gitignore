@@ -6,7 +6,7 @@
 *.bin
 
 # Go build output
-server/bin/
+bin/
 im-server
 
 # Test binary
@@ -28,7 +28,7 @@ vendor/
 Thumbs.db
 
 # Config
-config/config-prod.yaml
+internal/config/config-prod.yaml
 
 # Docker
 gochat/mysql/data/

@@ -23,12 +23,20 @@
 ## 目录结构
 
 ```
-├── server/       # Go 后端（API、WebSocket 连接层、业务逻辑）
-├── web/          # Vue 3 前端
-├── proto/        # protobuf 定义
-├── gochat/       # Docker Compose 编排及配置（mysql/nginx/server）
-├── docs/         # 文档（数据库、WebSocket 协议、集成指南等）
-└── scripts/      # 脚本
+├── cmd/
+│   └── im-server/       # 后端运行入口
+├── internal/             # Go 后端实现（仅供本仓库内部使用）
+│   ├── application/      # 应用组装与运行生命周期
+│   ├── api/              # HTTP API 与处理器
+│   ├── connect/          # WebSocket 连接层
+│   ├── logic/            # 领域模型、仓储与业务服务
+│   ├── pkg/              # 基础设施与通用工具
+│   └── config/           # 配置文件
+├── web/                  # Vue 3 前端
+├── proto/                # protobuf 定义
+├── gochat/               # Docker Compose 编排及配置
+├── docs/                 # 文档（数据库、WebSocket 协议、集成指南等）
+└── scripts/              # 脚本
 ```
 
 ## 快速开始
@@ -50,10 +58,16 @@ make docker-restart   # 重启
 
 ### 本地开发
 
-后端：
+后端默认从 `internal/config/config-dev.yaml` 加载配置：
 
 ```bash
-cd server && go run -tags=etcd ./main.go
+go run -tags=etcd ./cmd/im-server
+```
+
+也可以通过 `-config` 指定配置文件：
+
+```bash
+go run -tags=etcd ./cmd/im-server -config internal/config/config-dev.yaml
 ```
 
 前端：

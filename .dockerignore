@@ -1,0 +1,20 @@
+# Build context
+.git/
+.gitignore
+
+# Go build output
+bin/
+*.exe
+
+# Runtime-only configuration and generated files
+internal/config/
+internal/reports/
+internal/test/
+
+# Documentation and local tooling
+*.md
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,18 +1,18 @@
-APP_NAME = gochat
+APP_NAME = im-server
 
-.PHONY: all build run docker-build docker-up docker-down docker-logs docker-restart dev-web clean
+.PHONY: all build run test docker-build docker-up docker-down docker-logs docker-restart dev-web clean
 
 all: build
 
 # ========== 后端编译 ==========
 build:
-	cd server && go build -tags=etcd -o bin/$(APP_NAME).bin ./main.go
+	go build -tags=etcd -o $(APP_NAME) ./cmd/im-server
 
 run:
-	cd server && go run -tags=etcd ./main.go
+	go run -tags=etcd ./cmd/im-server
 
 test:
-	cd server && go test -tags=etcd ./...
+	go test -tags=etcd ./...
 
 # ========== Docker ==========
 docker-build:
@@ -36,4 +36,4 @@ dev-web:
 
 # ========== 清理 ==========
 clean:
-	rm -rf server/bin/
+	rm -f $(APP_NAME) $(APP_NAME).exe
