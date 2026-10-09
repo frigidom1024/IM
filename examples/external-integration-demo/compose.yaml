@@ -24,8 +24,8 @@ services:
   # third-party MinIO registry mirror.
   object-store:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: examples/external-integration-demo/Dockerfile
     container_name: gochat-integration-object-store
     environment:
       MODE: s3
@@ -40,8 +40,8 @@ services:
 
   external-app:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: examples/external-integration-demo/Dockerfile
     container_name: gochat-integration-external-app
     environment:
       PORT: "8090"

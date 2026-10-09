@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
+	"gochat/sdk"
 	"log"
 	"net/http"
 	"os"
@@ -64,15 +67,13 @@ func registerExternalApp(mux *http.ServeMux) {
 		writeJSON(w, http.StatusOK, result)
 	})
 
-	mux.HandleFunc("/api/user/info", func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	mux.Handle("/api/user/info", sdk.NewUserInfoHandler(sdk.UserResolverFunc(func(_ context.Context, token string) (sdk.ExternalUser, error) {
 		user, ok := users[strings.TrimSpace(token)]
 		if !ok {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid external token"})
-			return
+			return sdk.ExternalUser{}, errors.New("invalid external token")
 		}
-		writeJSON(w, http.StatusOK, user)
-	})
+		return sdk.ExternalUser{ID: user.ID, Name: user.Name, Avatar: user.Avatar}, nil
+	})))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
