@@ -157,7 +157,7 @@ const friendList = ref([
 
 ### 开发环境
 
-编辑 `server/config/config-dev.yaml`：
+编辑 `internal/config/config-dev.yaml`：
 
 ```yaml
 auth:
@@ -197,31 +197,37 @@ GoChat 不修改任何表结构。用户映射逻辑如下：
 
 ## 第四部分：完整集成示例
 
-### 场景：Scraper 项目集成 GoChat 聊天
+### 场景：外部项目集成 GoChat 聊天
 
 ```
-Scraper (Python FastAPI)              GoChat
+External Demo (Python)              GoChat
   │                                      │
   │ 1. 启动 GoChat Docker 镜像            │
   │    docker compose up -d              │
   │                                      │
   │ 2. 配置 auth.mode = external         │
   │    external_user_api =               │
-  │    "http://scraper:8000/api/user/info"│
+  │    "http://external-app:8090/api/user/info"│
   │                                      │
   │ 3. 实现 /api/user/info 接口           │
   │    返回登录用户的 id 和 name          │
   │                                      │
   │ 4. 前端页面嵌入 ChatWidget            │
-  │    传入用户的 scraper JWT             │
+  │    传入用户的外部 JWT             │
   │                                      │
   │ 5. ✅  集成完成                       │
-  │    scraper 用户可以直接聊天            │
+  │    外部项目用户可以直接聊天            │
 ```
 
 ---
 
-## 第五部分：常见问题
+## 第五部分：可运行的集成示例
+
+仓库提供了一个不依赖第三方 Python 包的最小外部应用，可直接验证外部认证、好友接口、WebSocket 私聊和消息持久化：
+
+- [examples/external-integration-demo/README.md](../examples/external-integration-demo/README.md)
+
+## 第六部分：常见问题
 
 ### Q: 外部 API 返回什么格式？
 

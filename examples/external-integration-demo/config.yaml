@@ -1,0 +1,41 @@
+server:
+  api_addr: ":8080"
+  connect_addr: ":7000"
+  logic_addr: ":7070"
+  task_addr: ":7071"
+
+mysql:
+  host: mysql
+  port: 3306
+  user: gochat
+  password: gochat
+  database: gochat
+
+redis:
+  host: redis
+  port: 6379
+  password: ""
+  db: 0
+
+etcd:
+  endpoints:
+    - etcd:2379
+
+minio:
+  endpoint: object-store:9000
+  access_key_id: minioadmin
+  secret_access_key: minioadmin123
+  bucket: gochat
+  use_ssl: false
+
+auth:
+  mode: external
+  external_user_api: http://external-app:8090/api/user/info
+
+jwt:
+  secret: "integration-demo-secret"
+  expire_time: 24
+
+logger:
+  level: "info"
+  output: "stdout"

@@ -16,6 +16,7 @@ import (
 	"gochat/internal/pkg/minio"
 	"gochat/internal/pkg/mysql"
 	"gochat/internal/pkg/snowflake"
+	"gochat/internal/pkg/util"
 
 	"go.uber.org/zap"
 )
@@ -33,6 +34,8 @@ func New(cfg *config.Config) (*Application, error) {
 	if cfg == nil {
 		return nil, errors.New("应用配置不能为空")
 	}
+
+	util.Init(cfg.JWT.Secret)
 
 	if err := logger.Init(cfg.Logger.Level, cfg.Logger.Output); err != nil {
 		return nil, fmt.Errorf("初始化日志失败: %w", err)

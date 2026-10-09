@@ -39,3 +39,7 @@ web/dist/
 
 .playwright-mcp/
 web/core/dist/
+
+# Python
+__pycache__/
+*.py[cod]

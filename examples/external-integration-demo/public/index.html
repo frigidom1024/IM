@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GoChat 外部集成演示</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { max-width: 960px; margin: 0 auto; padding: 32px 20px; color: #1f2937; background: #f8fafc; }
+    h1 { margin-bottom: 8px; }
+    .muted { color: #64748b; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 20px 0; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; box-shadow: 0 2px 8px #0f172a0d; }
+    label { display: block; margin-bottom: 6px; font-weight: 600; }
+    select, input, button { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font: inherit; }
+    button { cursor: pointer; border: 0; color: #fff; background: #2563eb; margin-top: 10px; }
+    button.secondary { background: #475569; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .status { display: flex; gap: 8px; align-items: center; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; }
+    .dot.ok { background: #16a34a; }
+    pre { min-height: 180px; max-height: 320px; overflow: auto; padding: 12px; color: #dbeafe; background: #0f172a; border-radius: 8px; white-space: pre-wrap; }
+    code { word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>GoChat 外部系统集成演示</h1>
+  <p class="muted">当前页面属于外部应用，通过外部 token 换取 GoChat token，并通过 WebSocket 建立聊天连接。</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>1. 外部系统登录</h2>
+      <label for="user">演示用户</label>
+      <select id="user">
+        <option value="demo-alice">Alice（demo-alice）</option>
+        <option value="demo-bob">Bob（demo-bob）</option>
+      </select>
+      <button id="login">调用 GoChat 外部认证</button>
+      <p id="identity" class="muted">尚未登录</p>
+    </section>
+
+    <section class="card">
+      <h2>2. WebSocket 状态</h2>
+      <div class="status"><span id="ws-dot" class="dot"></span><span id="ws-state">未连接</span></div>
+      <label for="target">接收方 GoChat 用户 ID</label>
+      <input id="target" type="number" placeholder="在另一个用户会话中查看 ID" />
+      <label for="message" style="margin-top:10px">消息</label>
+      <input id="message" value="来自外部集成项目的消息" />
+      <button id="send" disabled>发送消息</button>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>运行日志</h2>
+    <pre id="log"></pre>
+  </section>
+
+  <script>
+    const GOCHAT_API = 'http://localhost:18080';
+    const GOCHAT_WS = 'ws://localhost:17000/ws';
+    let gochatToken = '';
+    let socket = null;
+    let currentUser = null;
+
+    const $ = (id) => document.getElementById(id);
+    function log(message, value) {
+      const suffix = value === undefined ? '' : ` ${JSON.stringify(value)}`;
+      $('log').textContent += `${new Date().toLocaleTimeString()} ${message}${suffix}\n`;
+      $('log').scrollTop = $('log').scrollHeight;
+    }
+
+    async function request(path, options = {}) {
+      const response = await fetch(`${GOCHAT_API}${path}`, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+      });
+      const body = await response.json();
+      if (!response.ok || body.code > 0) throw new Error(body.message || `HTTP ${response.status}`);
+      return body;
+    }
+
+    function connectWebSocket() {
+      if (socket) socket.close();
+      socket = new WebSocket(`${GOCHAT_WS}?token=${encodeURIComponent(gochatToken)}`);
+      socket.addEventListener('open', () => {
+        $('ws-dot').classList.add('ok');
+        $('ws-state').textContent = '已连接';
+        $('send').disabled = false;
+        log('WebSocket 已连接');
+      });
+      socket.addEventListener('message', (event) => log('收到 WebSocket 消息', JSON.parse(event.data)));
+      socket.addEventListener('close', () => {
+        $('ws-dot').classList.remove('ok');
+        $('ws-state').textContent = '已断开';
+        $('send').disabled = true;
+      });
+      socket.addEventListener('error', () => log('WebSocket 连接错误'));
+    }
+
+    $('login').addEventListener('click', async () => {
+      const externalToken = $('user').value;
+      try {
+        const external = await fetch(`${location.origin}/api/user/info`, {
+          headers: { Authorization: `Bearer ${externalToken}` }
+        }).then((r) => r.json());
+        log('外部用户服务返回', external);
+
+        const auth = await request('/api/auth', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${externalToken}` }
+        });
+        gochatToken = auth.data.token;
+        currentUser = auth.data.user;
+        $('identity').textContent = `${currentUser.name} 已登录，GoChat 用户 ID：${currentUser.id}`;
+        $('target').value = '';
+        log('GoChat 外部认证成功', currentUser);
+        connectWebSocket();
+      } catch (error) {
+        log(`登录失败：${error.message}`);
+      }
+    });
+
+    $('send').addEventListener('click', () => {
+      const target = Number($('target').value);
+      const content = $('message').value.trim();
+      if (!target || !content || !socket || socket.readyState !== WebSocket.OPEN) return;
+      const packet = {
+        cmd: 'msg',
+        seq: `browser-${Date.now()}`,
+        data: { from_id: currentUser.id, to_id: target, type: 'text', content }
+      };
+      socket.send(JSON.stringify(packet));
+      log('发送 WebSocket 消息', packet);
+    });
+  </script>
+</body>
+</html>

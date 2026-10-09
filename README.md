@@ -34,6 +34,7 @@
 │   └── config/           # 配置文件
 ├── web/                  # Vue 3 前端
 ├── proto/                # protobuf 定义
+├── examples/             # 外部系统集成示例与 E2E 测试
 ├── gochat/               # Docker Compose 编排及配置
 ├── docs/                 # 文档（数据库、WebSocket 协议、集成指南等）
 └── scripts/              # 脚本
@@ -94,6 +95,7 @@ GoChat 支持作为微服务集成到其他系统，外部系统只需提供一�
 - [数据库设计](docs/database.md)
 - [WebSocket 协议](docs/websocket.md)
 - [外部系统集成指南](docs/integration.md)
+- [外部集成 E2E 演示](examples/external-integration-demo/README.md)
 
 ## License
 
