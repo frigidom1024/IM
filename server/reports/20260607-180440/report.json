@@ -1,0 +1,81 @@
+{
+  "generated_at": "2026-06-07T18:04:40+08:00",
+  "snapshots": {
+    "2c4g/connection": [
+      {
+        "time": "2026-06-07T18:03:13.8534589+08:00",
+        "active_conns": 100,
+        "conn_success": 100,
+        "msg_throughput": 9.60503418678787,
+        "latency_p50": 1.33,
+        "latency_p90": 2.57,
+        "latency_p99": 3.9,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:03:23.8891387+08:00",
+        "active_conns": 100,
+        "conn_success": 100,
+        "msg_throughput": 9.964447052206667,
+        "latency_p50": 1.58,
+        "latency_p90": 3.79,
+        "latency_p99": 4.51,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:03:46.4808833+08:00",
+        "active_conns": 500,
+        "conn_success": 100,
+        "msg_throughput": 26.558373893798358,
+        "latency_p50": 1.51,
+        "latency_p90": 4.14,
+        "latency_p99": 7.45,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:03:56.4966822+08:00",
+        "active_conns": 500,
+        "conn_success": 100,
+        "msg_throughput": 49.921130105757214,
+        "latency_p50": 2.02,
+        "latency_p90": 5.14,
+        "latency_p99": 6.77,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:04:19.7805309+08:00",
+        "active_conns": 1000,
+        "conn_success": 100,
+        "msg_throughput": 64.42233925012577,
+        "latency_p50": 3.98,
+        "latency_p90": 15.91,
+        "latency_p99": 23.53,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:04:29.7793944+08:00",
+        "active_conns": 1000,
+        "conn_success": 100,
+        "msg_throughput": 100.01136629177905,
+        "latency_p50": 2.02,
+        "latency_p90": 7.29,
+        "latency_p99": 10.4,
+        "error_count": 0
+      }
+    ]
+  },
+  "summaries": [
+    {
+      "layer_name": "connection",
+      "profile_name": "2c4g",
+      "duration": 90000000000,
+      "peak_conns": 1000,
+      "total_messages": 4803,
+      "avg_throughput": 53.36666666666667,
+      "latency_p50": 3.37,
+      "latency_p90": 9.31,
+      "latency_p99": 14.41,
+      "error_rate": 0
+    }
+  ]
+}

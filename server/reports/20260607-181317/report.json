@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-06-07T18:13:17+08:00",
+  "snapshots": {
+    "2c4g/private_chat_1": [
+      {
+        "time": "2026-06-07T18:12:17.0343399+08:00",
+        "active_conns": 200,
+        "conn_success": 100,
+        "msg_throughput": 110.84485559550153,
+        "latency_p50": 16.66,
+        "latency_p90": 22.18,
+        "latency_p99": 26.08,
+        "error_count": 0
+      }
+    ],
+    "2c4g/private_chat_10": [
+      {
+        "time": "2026-06-07T18:12:57.1027592+08:00",
+        "active_conns": 200,
+        "conn_success": 100,
+        "msg_throughput": 3912.075453559011,
+        "latency_p50": 123.74,
+        "latency_p90": 271.88,
+        "latency_p99": 463.5,
+        "error_count": 0
+      }
+    ],
+    "2c4g/private_chat_20": [
+      {
+        "time": "2026-06-07T18:13:17.1430443+08:00",
+        "active_conns": 200,
+        "conn_success": 100,
+        "msg_throughput": 3778.289561359584,
+        "latency_p50": 102.22,
+        "latency_p90": 238.88,
+        "latency_p99": 336.96,
+        "error_count": 0
+      }
+    ],
+    "2c4g/private_chat_5": [
+      {
+        "time": "2026-06-07T18:12:37.0834623+08:00",
+        "active_conns": 200,
+        "conn_success": 100,
+        "msg_throughput": 1935.2966791204785,
+        "latency_p50": 53.82,
+        "latency_p90": 167.68,
+        "latency_p99": 280.96,
+        "error_count": 0
+      }
+    ]
+  },
+  "summaries": [
+    {
+      "layer_name": "private_chat",
+      "profile_name": "2c4g",
+      "duration": 80000000000,
+      "peak_conns": 200,
+      "total_messages": 201803,
+      "avg_throughput": 2522.5375,
+      "latency_p50": 0,
+      "latency_p90": 0,
+      "latency_p99": 0,
+      "error_rate": 0
+    }
+  ]
+}

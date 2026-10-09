@@ -1,0 +1,211 @@
+{
+  "generated_at": "2026-06-07T18:17:19+08:00",
+  "snapshots": {
+    "2c4g/group_chat": [
+      {
+        "time": "2026-06-07T18:16:22.3322193+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 4.212458645144628,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:25.3547581+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 72.78649326188965,
+        "latency_p50": 21.72,
+        "latency_p90": 33.12,
+        "latency_p99": 34.46,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:28.3859033+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 74.88918709667884,
+        "latency_p50": 30.36,
+        "latency_p90": 33.04,
+        "latency_p99": 33.91,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:31.4021954+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 73.2687659792631,
+        "latency_p50": 16.34,
+        "latency_p90": 17.48,
+        "latency_p99": 18.12,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:34.3157548+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 74.13612367058657,
+        "latency_p50": 20.73,
+        "latency_p90": 21.79,
+        "latency_p99": 23.09,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:37.3402813+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 75.05307029050664,
+        "latency_p50": 16.05,
+        "latency_p90": 16.63,
+        "latency_p99": 17.01,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:40.3703668+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 73.92530672814347,
+        "latency_p50": 12.35,
+        "latency_p90": 13.99,
+        "latency_p99": 16.94,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:43.3917654+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 71.82104340685139,
+        "latency_p50": 20.57,
+        "latency_p90": 21.59,
+        "latency_p99": 22.1,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:46.3217007+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 76.45220015609219,
+        "latency_p50": 31.41,
+        "latency_p90": 34.16,
+        "latency_p99": 35.02,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:49.346676+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 75.04193505315564,
+        "latency_p50": 19.59,
+        "latency_p90": 20.12,
+        "latency_p99": 20.12,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:52.3711062+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 71.7490521024423,
+        "latency_p50": 19.89,
+        "latency_p90": 21.05,
+        "latency_p99": 21.56,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:55.3857465+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 73.30891184596716,
+        "latency_p50": 17.15,
+        "latency_p90": 17.15,
+        "latency_p99": 17.15,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:16:58.4110037+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 75.034942483568,
+        "latency_p50": 13.14,
+        "latency_p90": 15.28,
+        "latency_p99": 15.45,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:17:01.3331394+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 74.94518478385517,
+        "latency_p50": 18.36,
+        "latency_p90": 20.39,
+        "latency_p99": 20.72,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:17:04.3543364+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 71.82583591867727,
+        "latency_p50": 19.67,
+        "latency_p90": 21.18,
+        "latency_p99": 23.08,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:17:07.3683545+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 75.31474346487833,
+        "latency_p50": 21.67,
+        "latency_p90": 25.52,
+        "latency_p99": 25.63,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:17:10.3997828+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 73.89256081036125,
+        "latency_p50": 15.03,
+        "latency_p90": 16.89,
+        "latency_p99": 16.89,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:17:13.3184826+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 74.34817379985431,
+        "latency_p50": 21.23,
+        "latency_p90": 23.08,
+        "latency_p99": 24.09,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:17:16.3727305+08:00",
+        "active_conns": 50,
+        "conn_success": 100,
+        "msg_throughput": 73.34047769992738,
+        "latency_p50": 15.43,
+        "latency_p90": 17.64,
+        "latency_p99": 18.14,
+        "error_count": 0
+      }
+    ]
+  },
+  "summaries": [
+    {
+      "layer_name": "group_chat",
+      "profile_name": "2c4g",
+      "duration": 60000000000,
+      "peak_conns": 50,
+      "total_messages": 4300,
+      "avg_throughput": 71.66666666666667,
+      "latency_p50": 19.15,
+      "latency_p90": 19.65,
+      "latency_p99": 20.41,
+      "error_rate": 0
+    }
+  ]
+}

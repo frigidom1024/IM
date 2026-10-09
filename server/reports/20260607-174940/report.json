@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-06-07T17:49:40+08:00",
+  "snapshots": {
+    "2c4g/connection": [
+      {
+        "time": "2026-06-07T17:49:15.7097891+08:00",
+        "active_conns": 0,
+        "conn_success": 0,
+        "msg_throughput": 0,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 10,
+        "error_breakdown": {
+          "connect_failed": 10
+        }
+      },
+      {
+        "time": "2026-06-07T17:49:20.7187698+08:00",
+        "active_conns": 0,
+        "conn_success": 0,
+        "msg_throughput": 0,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 10,
+        "error_breakdown": {
+          "connect_failed": 10
+        }
+      },
+      {
+        "time": "2026-06-07T17:49:30.7696088+08:00",
+        "active_conns": 0,
+        "conn_success": 0,
+        "msg_throughput": 0,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 60,
+        "error_breakdown": {
+          "connect_failed": 60
+        }
+      },
+      {
+        "time": "2026-06-07T17:49:35.7468893+08:00",
+        "active_conns": 0,
+        "conn_success": 0,
+        "msg_throughput": 0,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 60,
+        "error_breakdown": {
+          "connect_failed": 60
+        }
+      }
+    ]
+  },
+  "summaries": [
+    {
+      "layer_name": "connection",
+      "profile_name": "2c4g",
+      "duration": 30000000000,
+      "peak_conns": 0,
+      "total_messages": 0,
+      "avg_throughput": 0,
+      "latency_p50": 0,
+      "latency_p90": 0,
+      "latency_p99": 0,
+      "error_rate": 0,
+      "error_breakdown": {
+        "connect_failed": 60
+      }
+    }
+  ]
+}

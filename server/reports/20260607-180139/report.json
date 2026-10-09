@@ -1,0 +1,81 @@
+{
+  "generated_at": "2026-06-07T18:01:39+08:00",
+  "snapshots": {
+    "2c4g/connection": [
+      {
+        "time": "2026-06-07T18:00:13.6263445+08:00",
+        "active_conns": 100,
+        "conn_success": 100,
+        "msg_throughput": 9.65651440743512,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:00:23.643981+08:00",
+        "active_conns": 100,
+        "conn_success": 100,
+        "msg_throughput": 9.982394549852152,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:00:46.1480016+08:00",
+        "active_conns": 500,
+        "conn_success": 100,
+        "msg_throughput": 26.66190236246051,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:00:56.2267124+08:00",
+        "active_conns": 500,
+        "conn_success": 100,
+        "msg_throughput": 49.60951950322853,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:01:19.3169392+08:00",
+        "active_conns": 1000,
+        "conn_success": 100,
+        "msg_throughput": 64.96254943671666,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:01:29.3132172+08:00",
+        "active_conns": 1000,
+        "conn_success": 100,
+        "msg_throughput": 100.03723385844211,
+        "latency_p50": 0,
+        "latency_p90": 0,
+        "latency_p99": 0,
+        "error_count": 0
+      }
+    ]
+  },
+  "summaries": [
+    {
+      "layer_name": "connection",
+      "profile_name": "2c4g",
+      "duration": 90000000000,
+      "peak_conns": 1000,
+      "total_messages": 4803,
+      "avg_throughput": 53.36666666666667,
+      "latency_p50": 0,
+      "latency_p90": 0,
+      "latency_p99": 0,
+      "error_rate": 0
+    }
+  ]
+}

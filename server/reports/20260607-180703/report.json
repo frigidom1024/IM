@@ -1,0 +1,90 @@
+{
+  "generated_at": "2026-06-07T18:07:03+08:00",
+  "snapshots": {
+    "2c4g/connection": [
+      {
+        "time": "2026-06-07T18:05:17.4926886+08:00",
+        "active_conns": 1000,
+        "conn_success": 100,
+        "msg_throughput": 61.37068268643402,
+        "latency_p50": 7.05,
+        "latency_p90": 12.51,
+        "latency_p99": 15.22,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:05:27.4280126+08:00",
+        "active_conns": 1000,
+        "conn_success": 100,
+        "msg_throughput": 100.6509702149623,
+        "latency_p50": 7.62,
+        "latency_p90": 14.47,
+        "latency_p99": 21.31,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:06:00.6264286+08:00",
+        "active_conns": 3000,
+        "conn_success": 100,
+        "msg_throughput": 150.60959534936848,
+        "latency_p50": 15.79,
+        "latency_p90": 47.02,
+        "latency_p99": 55.57,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:06:10.6510101+08:00",
+        "active_conns": 3000,
+        "conn_success": 100,
+        "msg_throughput": 299.26436330534096,
+        "latency_p50": 12.47,
+        "latency_p90": 17.73,
+        "latency_p99": 21.38,
+        "error_count": 0
+      },
+      {
+        "time": "2026-06-07T18:06:43.2585746+08:00",
+        "active_conns": 4998,
+        "conn_success": 99.96000000000001,
+        "msg_throughput": 337.28369992183866,
+        "latency_p50": 18.2,
+        "latency_p90": 40.67,
+        "latency_p99": 68.47,
+        "error_count": 2,
+        "error_breakdown": {
+          "connect_failed": 2
+        }
+      },
+      {
+        "time": "2026-06-07T18:06:53.2531142+08:00",
+        "active_conns": 4998,
+        "conn_success": 99.96000000000001,
+        "msg_throughput": 500.07305989362436,
+        "latency_p50": 17.62,
+        "latency_p90": 25.62,
+        "latency_p99": 29.39,
+        "error_count": 2,
+        "error_breakdown": {
+          "connect_failed": 2
+        }
+      }
+    ]
+  },
+  "summaries": [
+    {
+      "layer_name": "connection",
+      "profile_name": "2c4g",
+      "duration": 90000000000,
+      "peak_conns": 4998,
+      "total_messages": 30997,
+      "avg_throughput": 344.4111111111111,
+      "latency_p50": 20.16,
+      "latency_p90": 41.8,
+      "latency_p99": 54.7,
+      "error_rate": 0.0064522373132883835,
+      "error_breakdown": {
+        "connect_failed": 2
+      }
+    }
+  ]
+}
