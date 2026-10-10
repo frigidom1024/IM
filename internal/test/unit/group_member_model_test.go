@@ -1,3 +1,5 @@
+//go:build integration
+
 package unit_test
 
 import (

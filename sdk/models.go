@@ -103,14 +103,29 @@ type Message struct {
 	SenderID     int64     `json:"sender_id"`
 }
 
-// MarkReadRequest marks messages from a sender as read.
+// MarkReadRequest marks one private or group scope as read.
 type MarkReadRequest struct {
-	FromID int64 `json:"from_id"`
+	FromID  int64 `json:"from_id"`
+	GroupID int64 `json:"group_id,omitempty"`
 }
 
 // UnreadCountResponse is returned by the unread count endpoint.
 type UnreadCountResponse struct {
-	Count int64 `json:"count"`
+	Count      int64           `json:"count"`
+	UnreadList []UnreadSummary `json:"unread_list"`
+}
+
+// UnreadSummary is one private or group unread aggregate.
+type UnreadSummary struct {
+	FromID          int64      `json:"from_id"`
+	GroupID         int64      `json:"group_id"`
+	Count           int64      `json:"count,omitempty"`
+	UnreadCount     int64      `json:"unread_count"`
+	LatestMessageID int64      `json:"latest_message_id,string,omitempty"`
+	LatestSenderID  int64      `json:"latest_sender_id,omitempty"`
+	LatestType      string     `json:"latest_message_type"`
+	LatestPreview   string     `json:"latest_preview"`
+	LatestAt        *time.Time `json:"latest_message_at,omitempty"`
 }
 
 // UploadRequest describes a file upload.

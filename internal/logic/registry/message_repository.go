@@ -1,13 +1,19 @@
 package registry
 
 import (
+	"errors"
+
 	"gochat/internal/logic/model"
 	"gochat/internal/pkg/mysql"
+
+	"gorm.io/gorm"
 )
 
 // MessageRepository 消息仓储接口
 type MessageRepository interface {
 	Create(msg *model.Message) error
+	CreateWithTx(tx *gorm.DB, msg *model.Message) error
+	FindByClientSeq(fromID int64, clientSeq string) (*model.Message, error)
 	GetByID(id int64) (*model.Message, error)
 	GetPrivateMessages(userID1, userID2 int64, limit int, offset int64) ([]*model.Message, error)
 	GetGroupMessages(groupID int64, limit int, offset int64) ([]*model.Message, error)
@@ -27,6 +33,27 @@ func NewMessageRepository() MessageRepository {
 // Create 创建消息
 func (r *messageRepository) Create(msg *model.Message) error {
 	return mysql.Client.Create(msg).Error
+}
+
+// CreateWithTx persists a message in the caller's transaction.
+func (r *messageRepository) CreateWithTx(tx *gorm.DB, msg *model.Message) error {
+	return tx.Create(msg).Error
+}
+
+// FindByClientSeq gets the already persisted message for an idempotent retry.
+func (r *messageRepository) FindByClientSeq(fromID int64, clientSeq string) (*model.Message, error) {
+	if clientSeq == "" {
+		return nil, nil
+	}
+	var msg model.Message
+	err := mysql.Client.Where("from_id = ? AND client_seq = ?", fromID, clientSeq).First(&msg).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &msg, nil
 }
 
 // GetByID 根据ID获取消息

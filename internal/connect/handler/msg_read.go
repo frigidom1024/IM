@@ -49,7 +49,11 @@ func (h *MsgReadHandler) Handle(ctx context.Context, userID string, msg connect.
 	}
 
 	if h.clearer != nil {
-		h.clearer.ClearUnread(userID, msgModel.FromID, msgModel.GroupID)
+		fromID := msgModel.FromID
+		if msgModel.GroupID > 0 {
+			fromID = 0
+		}
+		h.clearer.ClearUnread(userID, fromID, msgModel.GroupID)
 	}
 
 	ackData := map[string]any{"status": "success", "message_id": messageID}

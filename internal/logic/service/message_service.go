@@ -3,11 +3,14 @@ package service
 import (
 	"gochat/internal/logic/model"
 	"gochat/internal/logic/registry"
+	"gochat/internal/pkg/mysql"
+
+	"gorm.io/gorm"
 )
 
 // MessageService 消息服务
 type MessageService struct {
-	messageRepo      registry.MessageRepository
+	messageRepo     registry.MessageRepository
 	messageReadRepo registry.MessageReadRepository
 }
 
@@ -17,7 +20,7 @@ func NewMessageService(
 	messageReadRepo registry.MessageReadRepository,
 ) *MessageService {
 	return &MessageService{
-		messageRepo:      messageRepo,
+		messageRepo:     messageRepo,
 		messageReadRepo: messageReadRepo,
 	}
 }
@@ -25,6 +28,26 @@ func NewMessageService(
 // Send 发送消息
 func (s *MessageService) Send(msg *model.Message) error {
 	return s.messageRepo.Create(msg)
+}
+
+// SendWithUnread persists a message and all affected unread summaries atomically.
+func (s *MessageService) SendWithUnread(msg *model.Message, targets []model.UnreadTarget) error {
+	return mysql.Client.Transaction(func(tx *gorm.DB) error {
+		if err := s.messageRepo.CreateWithTx(tx, msg); err != nil {
+			return err
+		}
+		for _, target := range targets {
+			if err := s.messageReadRepo.IncrUnreadWithTx(tx, target.UserID, target.FromID, target.GroupID, msg); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// GetByClientSeq returns the persisted message for a sender retry.
+func (s *MessageService) GetByClientSeq(fromID int64, clientSeq string) (*model.Message, error) {
+	return s.messageRepo.FindByClientSeq(fromID, clientSeq)
 }
 
 // GetByID 获取消息
@@ -48,8 +71,8 @@ func (s *MessageService) Revoke(id int64) error {
 }
 
 // IncrUnread 增加未读计数
-func (s *MessageService) IncrUnread(userID, fromID, groupID int64) error {
-	return s.messageReadRepo.IncrUnread(userID, fromID, groupID)
+func (s *MessageService) IncrUnread(userID, fromID, groupID int64, latestMessage *model.Message) error {
+	return s.messageReadRepo.IncrUnread(userID, fromID, groupID, latestMessage)
 }
 
 // GetUnreadCount 获取用户总未读数

@@ -42,6 +42,9 @@ if err != nil {
 }
 
 messages, err := userClient.ListPrivateMessages(ctx, friendID)
+
+// 分页查询历史消息
+messages, err := userClient.ListPrivateMessagesPage(ctx, friendID, 50, 0)
 ```
 
 SDK 会自动：
@@ -122,6 +125,17 @@ mux.Handle("/api/user/info", sdk.NewUserInfoHandler(
 }
 ```
 
+## WebSocket 自动重连
+
+SDK 的 `Receive()` 在遇到临时断线时会自动重新建立连接，最多尝试 5 次并使用退避等待。`Send()` 遇到写入失败时会尝试恢复连接，但不会自动重发原消息；调用方应使用原来的 `seq` 再次发送，利用服务端幂等保证不会产生重复消息。
+
+调用方也可以显式执行：
+
+```go
+if err := ws.Reconnect(ctx); err != nil {
+    // 连接恢复失败
+}
+```
 ## 错误处理
 
 ```go
@@ -148,3 +162,6 @@ if err != nil {
 - 文件上传
 - WebSocket 连接、聊天消息、ping 和原始消息收发
 - 外部用户信息 HTTP handler
+### 消息幂等重试
+
+SDK 的 WebSocket `SendChat` 会生成 `seq`。调用方在没有收到 ACK 时，可以使用同一个 seq 重试原始消息；服务端会返回原 `message_id`，并在 ACK 中设置 `duplicate: true`，不会重复保存或重复增加未读数。

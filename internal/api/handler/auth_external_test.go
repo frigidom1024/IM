@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"gochat/internal/logic/model"
 	bizerr "gochat/internal/pkg/errors"
+	"gochat/internal/pkg/logger"
 	"gochat/internal/pkg/util"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +28,7 @@ func (m *mockUserRepo) GetByUsername(username string) (*model.User, error) {
 	}
 	return u, nil
 }
-func (m *mockUserRepo) GetByID(id int64) (*model.User, error)          { return nil, nil }
+func (m *mockUserRepo) GetByID(id int64) (*model.User, error)                  { return nil, nil }
 func (m *mockUserRepo) GetByExternalID(externalID string) (*model.User, error) { return nil, nil }
 func (m *mockUserRepo) Create(user *model.User) error {
 	if m.users == nil {
@@ -117,4 +119,39 @@ func TestExternalAuthMissingToken(t *testing.T) {
 		t.Fatalf("期望 %d, 得到 %d", bizerr.CodeUnauthorized, resp.Code)
 	}
 	t.Log("缺失 token 时正确返回 401")
+}
+
+func TestExternalAuthTimeout(t *testing.T) {
+	extSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer extSrv.Close()
+
+	util.Init("test-secret")
+	if err := logger.Init("error", "stdout"); err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Sync()
+	gin.SetMode(gin.TestMode)
+	authHandler := NewExternalAuthHandlerWithTimeout(&mockUserRepo{}, extSrv.URL, 10*time.Millisecond)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/auth", nil)
+	c.Request.Header.Set("Authorization", "Bearer timeout-token")
+	authHandler.ExternalAuth(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("HTTP status = %d, want 401", w.Code)
+	}
+	var response struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != bizerr.CodeUnauthorized {
+		t.Fatalf("code = %d, want %d", response.Code, bizerr.CodeUnauthorized)
+	}
 }

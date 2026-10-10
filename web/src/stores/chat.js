@@ -11,7 +11,7 @@ export const useChatStore = defineStore('chat', () => {
 
   const currentMessages = computed(() => {
     if (!currentChat.value) return []
-    const key = String(currentChat.value.id)
+    const key = currentChat.value.type === 'group' ? 'g' + currentChat.value.id : String(currentChat.value.id)
     const msgs = messagesCache.value[key] || []
     return [...msgs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
   })
@@ -24,9 +24,8 @@ export const useChatStore = defineStore('chat', () => {
     if (!list) return
     const map = {}
     for (const item of list) {
-      if (item.from_id > 0) {
-        map[String(item.from_id)] = item.count
-      }
+      const key = item.group_id > 0 ? 'g' + item.group_id : String(item.from_id)
+      map[key] = item.count || item.unread_count || 0
     }
     unreadMap.value = { ...unreadMap.value, ...map }
   })
@@ -73,8 +72,9 @@ export const useChatStore = defineStore('chat', () => {
   // markRead 发送已读回执
   // 取最后一条对方发送的真实消息（非临时、非自己发送）
   // 服务端根据此消息的 from_id 清除未读计数
-  function markRead(fromId) {
-    const msgs = messagesCache.value[String(fromId)]
+  function markRead(fromId, type = 'private') {
+    const key = type === 'group' ? 'g' + fromId : String(fromId)
+    const msgs = messagesCache.value[key]
     if (!msgs || msgs.length === 0) return
     const realMsg = [...msgs].reverse().find(m => !m._temp && !m.isMine)
     if (!realMsg) {
@@ -90,7 +90,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function openChat(id, name, type = 'private') {
-    const key = String(id)
+    const key = type === 'group' ? 'g' + id : String(id)
     currentChat.value = { id, name, type }
     unreadMap.value[key] = 0
 
@@ -113,7 +113,7 @@ export const useChatStore = defineStore('chat', () => {
         }
         merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
         messagesCache.value = { ...messagesCache.value, [key]: merged }
-        markRead(id)
+        markRead(id, type)
       }
     } catch (e) {
       console.error('loadMessages:', e)
@@ -125,7 +125,7 @@ export const useChatStore = defineStore('chat', () => {
     if (msgType === 'text' && typeof content === 'string' && !content.trim()) return
     const userStore = useUserStore()
     const chat = currentChat.value
-    const key = String(chat.id)
+    const key = chat.type === 'group' ? 'g' + chat.id : String(chat.id)
 
     // 构建消息对象
     const msgObj = {

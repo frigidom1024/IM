@@ -80,6 +80,7 @@ WebSocket 端点: `/ws?token={jwt}`
 | `group_id` | number | 群组 ID（私聊填 0） |
 | `type` | string | 消息类型: `text` `image` `file` `voice` `video` `mention` |
 | `content` | string | 文字消息存原文；多媒体消息存 FileMeta JSON |
+| `seq` | string | 发送方幂等序列号；相同发送者重复使用同一 seq 会返回原消息 ID |
 
 > **约束**
 - `to_id` 和 `group_id` 互斥，只能一个非零
@@ -114,7 +115,7 @@ WebSocket 端点: `/ws?token={jwt}`
 
 > **处理逻辑**
 1. 根据 `message_id` 查询消息记录，获取 `from_id`（发送者）
-2. 清除当前用户对该发送者的未读计数：`UPDATE unread_count SET count=0 WHERE user_id=? AND from_id=? AND group_id=?`
+2. 清除当前用户对该发送者的未读计数：`UPDATE unread_count SET unread_count=0, read_at=NOW(3) WHERE user_id=? AND from_id=? AND group_id=?`
 3. 返回确认
 
 > **响应**
@@ -142,12 +143,12 @@ WebSocket 端点: `/ws?token={jwt}`
 {
   "cmd": "msg_reply",
   "seq": "1749218312345",
-  "data": { "status": "success", "message_id": "321622086873387008" }
+  "data": { "status": "success", "message_id": "321622086873387008", "duplicate": false }
 }
 ```
 
 > **注意**
-`seq` 值与发送请求的 `seq` 一致，用于客户端匹配确认和重试。
+`seq` 值与发送请求的 `seq` 一致，用于客户端匹配确认和重试。重复请求会返回同一个 `message_id`，并将 `duplicate` 设置为 `true`。
 
 ---
 
@@ -185,7 +186,7 @@ WebSocket 端点: `/ws?token={jwt}`
 {
   "cmd": "msg_read_reply",
   "seq": "1749218315678",
-  "data": { "status": "success", "message_id": "321622086873387008" }
+  "data": { "status": "success", "message_id": "321622086873387008", "duplicate": false }
 }
 ```
 
@@ -202,9 +203,10 @@ WebSocket 端点: `/ws?token={jwt}`
   "seq": "",
   "data": {
     "user_id": "4",
+    "total_unread_count": 10,
     "unread_list": [
-      { "from_id": 5, "group_id": 0, "count": 3 },
-      { "from_id": 0, "group_id": 1, "count": 7 }
+      { "from_id": 5, "group_id": 0, "count": 3, "latest_message": { "id": "123", "sender_id": 5, "type": "text", "preview": "最后一条消息" } },
+      { "from_id": 0, "group_id": 1, "count": 7, "latest_message": { "id": "456", "sender_id": 8, "type": "text", "preview": "群里的最新消息" } }
     ]
   }
 }
@@ -215,10 +217,12 @@ WebSocket 端点: `/ws?token={jwt}`
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `user_id` | string | 当前用户 ID |
+| `total_unread_count` | number | 所有未读聚合记录的总数 |
 | `unread_list` | array | 未读汇总列表 |
 | `unread_list[].from_id` | number | 发送者 ID（群消息为 0） |
 | `unread_list[].group_id` | number | 群组 ID（私聊为 0） |
-| `unread_list[].count` | number | 未读消息数量 |
+| `unread_list[].count` | number | 该私聊或群聊聚合范围的未读消息数量 |
+| `unread_list[].latest_message` | object | 该聚合范围最新一条消息摘要 |
 
 ---
 

@@ -1,3 +1,5 @@
+//go:build integration
+
 package unit_test
 
 import (
@@ -40,7 +42,7 @@ func TestMessageModel(t *testing.T) {
 	}
 
 	if found.MsgType != model.MsgTypeText {
-		t.Errorf("expected msg_type %d, got %d", model.MsgTypeText, found.MsgType)
+		t.Errorf("expected msg_type %s, got %s", model.MsgTypeText, found.MsgType)
 	}
 
 	if found.FromID != 2 || found.ToID != 3 {
@@ -197,8 +199,8 @@ func TestMessageTypes(t *testing.T) {
 
 	// 测试不同类型的消息
 	messageTypes := []struct {
-		msgType  int8
-		content  string
+		msgType string
+		content string
 	}{
 		{model.MsgTypeText, "文字消息测试"},
 		{model.MsgTypeImage, "http://example.com/image.png"},
@@ -225,12 +227,12 @@ func TestMessageTypes(t *testing.T) {
 		}
 
 		if err := msgRepo.Create(msg); err != nil {
-			t.Fatalf("create %d message failed: %v", mt.msgType, err)
+			t.Fatalf("create %s message failed: %v", mt.msgType, err)
 		}
 
 		found, err := msgRepo.GetByID(msg.ID)
 		if err != nil {
-			t.Fatalf("get %d message failed: %v", mt.msgType, err)
+			t.Fatalf("get %s message failed: %v", mt.msgType, err)
 		}
 
 		if found.Content != mt.content {
@@ -238,9 +240,41 @@ func TestMessageTypes(t *testing.T) {
 		}
 
 		if found.MsgType != mt.msgType {
-			t.Errorf("expected msg_type %d, got %d", mt.msgType, found.MsgType)
+			t.Errorf("expected msg_type %s, got %s", mt.msgType, found.MsgType)
 		}
 	}
 
 	t.Log("Message types test passed")
+}
+
+func TestMessageClientSeqLookup(t *testing.T) {
+	cfg := config.MustLoad("../../config/config-dev.yaml")
+	if err := mysql.Init(&cfg.MySQL); err != nil {
+		t.Fatalf("init mysql failed: %v", err)
+	}
+	defer mysql.Close()
+	snowflake.Init(1, 1)
+
+	seq := "integration-client-seq"
+	msg := &model.Message{
+		ID:        snowflake.MustNextID(),
+		FromID:    7,
+		ToID:      8,
+		MsgType:   model.MsgTypeText,
+		Content:   "idempotent message",
+		ClientSeq: &seq,
+	}
+	repo := registry.NewMessageRepository()
+	if err := repo.Create(msg); err != nil {
+		t.Fatalf("create idempotent message failed: %v", err)
+	}
+	defer mysql.Client.Where("id = ?", msg.ID).Delete(&model.Message{})
+
+	found, err := repo.FindByClientSeq(msg.FromID, seq)
+	if err != nil {
+		t.Fatalf("find by client seq failed: %v", err)
+	}
+	if found == nil || found.ID != msg.ID {
+		t.Fatalf("found message = %#v, want id %d", found, msg.ID)
+	}
 }

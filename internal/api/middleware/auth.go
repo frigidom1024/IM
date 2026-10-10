@@ -23,9 +23,9 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Bearer token
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			logger.Warn("token格式错误", zap.String("auth", authHeader))
+		parts := strings.Fields(authHeader)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+			logger.Warn("token格式错误", zap.String("path", c.Request.URL.Path))
 			errors.RespondError(c, errors.New(errors.CodeUnauthorized, "token格式错误"))
 			c.Abort()
 			return

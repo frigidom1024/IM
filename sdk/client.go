@@ -188,28 +188,52 @@ func (c *Client) RemoveGroupMember(ctx context.Context, groupID, userID int64) e
 
 // ListPrivateMessages gets recent private messages with another user.
 func (c *Client) ListPrivateMessages(ctx context.Context, userID int64) ([]Message, error) {
+	return c.ListPrivateMessagesPage(ctx, userID, 50, 0)
+}
+
+// ListPrivateMessagesPage gets a page of private messages.
+func (c *Client) ListPrivateMessagesPage(ctx context.Context, userID int64, limit int, offset int64) ([]Message, error) {
 	var response []Message
-	err := c.doAuthenticated(ctx, http.MethodGet, "/api/message/private/"+strconv.FormatInt(userID, 10), nil, &response)
+	path := fmt.Sprintf("/api/message/private/%d?limit=%d&offset=%d", userID, limit, offset)
+	err := c.doAuthenticated(ctx, http.MethodGet, path, nil, &response)
 	return response, err
 }
 
 // ListGroupMessages gets recent messages in a group.
 func (c *Client) ListGroupMessages(ctx context.Context, groupID int64) ([]Message, error) {
+	return c.ListGroupMessagesPage(ctx, groupID, 50, 0)
+}
+
+// ListGroupMessagesPage gets a page of group messages.
+func (c *Client) ListGroupMessagesPage(ctx context.Context, groupID int64, limit int, offset int64) ([]Message, error) {
 	var response []Message
-	err := c.doAuthenticated(ctx, http.MethodGet, "/api/message/group/"+strconv.FormatInt(groupID, 10), nil, &response)
+	path := fmt.Sprintf("/api/message/group/%d?limit=%d&offset=%d", groupID, limit, offset)
+	err := c.doAuthenticated(ctx, http.MethodGet, path, nil, &response)
 	return response, err
 }
 
 // MarkRead clears private-message unread count from a sender.
 func (c *Client) MarkRead(ctx context.Context, fromID int64) error {
-	return c.doAuthenticated(ctx, http.MethodPost, "/api/message/read", MarkReadRequest{FromID: fromID}, nil)
+	return c.MarkReadConversation(ctx, fromID, 0)
+}
+
+// MarkReadConversation clears unread count for one private or group scope.
+func (c *Client) MarkReadConversation(ctx context.Context, fromID, groupID int64) error {
+	return c.doAuthenticated(ctx, http.MethodPost, "/api/message/read", MarkReadRequest{FromID: fromID, GroupID: groupID}, nil)
 }
 
 // GetUnreadCount gets the current user's total unread count.
 func (c *Client) GetUnreadCount(ctx context.Context) (int64, error) {
+	response, err := c.GetUnreadSummary(ctx)
+	return response.Count, err
+}
+
+// GetUnreadSummary gets the total unread count and one summary per private or
+// group scope.
+func (c *Client) GetUnreadSummary(ctx context.Context) (*UnreadCountResponse, error) {
 	var response UnreadCountResponse
 	err := c.doAuthenticated(ctx, http.MethodGet, "/api/message/unread", nil, &response)
-	return response.Count, err
+	return &response, err
 }
 
 // Upload uploads a file or media object through the GoChat API.
