@@ -3,7 +3,6 @@ package sdk
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 )
@@ -79,5 +78,3 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
 }
-
-var _ = errors.New

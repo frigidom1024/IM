@@ -3,8 +3,8 @@ package test
 import (
 	"testing"
 
-	"gochat/internal/pkg/logger"
 	"go.uber.org/zap"
+	"gochat/internal/pkg/logger"
 )
 
 func TestLogger(t *testing.T) {

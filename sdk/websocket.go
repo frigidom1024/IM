@@ -8,12 +8,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-// WSOption customizes a WebSocket connection.
+// WSOption customizes a WebSocket connection handshake.
 type WSOption func(http.Header) error
 
 // WithWebSocketHeader adds a header to the WebSocket handshake.
@@ -24,9 +25,17 @@ func WithWebSocketHeader(key, value string) WSOption {
 	}
 }
 
-// WebSocketClient is a small typed client for GoChat's WebSocket protocol.
+// WebSocketClient is a typed client for GoChat's WebSocket protocol. Receive
+// automatically reconnects after an unexpected disconnect. Send never retries
+// the failed message automatically; callers can safely retry with the same
+// seq so the server-side idempotency contract prevents duplicates.
 type WebSocketClient struct {
-	conn *websocket.Conn
+	connMu      sync.RWMutex
+	reconnectMu sync.Mutex
+	conn        *websocket.Conn
+	endpoint    string
+	headers     http.Header
+	closed      bool
 }
 
 // ConnectWebSocket connects using the client's configured WebSocket endpoint.
@@ -52,7 +61,7 @@ func (c *Client) ConnectWebSocket(ctx context.Context, options ...WSOption) (*We
 		}
 	}
 
-	conn, response, err := (&websocket.Dialer{}).DialContext(ctx, endpoint, headers)
+	conn, response, err := dialWebSocket(ctx, endpoint, headers)
 	if err != nil {
 		if response != nil {
 			response.Body.Close()
@@ -60,15 +69,25 @@ func (c *Client) ConnectWebSocket(ctx context.Context, options ...WSOption) (*We
 		}
 		return nil, fmt.Errorf("gochat sdk: websocket connect: %w", err)
 	}
-	return &WebSocketClient{conn: conn}, nil
+	return &WebSocketClient{
+		conn:     conn,
+		endpoint: endpoint,
+		headers:  cloneHeader(headers),
+	}, nil
 }
 
-// Send writes a raw protocol message.
+// Send writes a raw protocol message. If the write fails, the SDK reconnects
+// but returns the error without replaying the message.
 func (c *WebSocketClient) Send(message WSMessage) error {
-	if c == nil || c.conn == nil {
-		return errors.New("gochat sdk: websocket is not connected")
+	conn, err := c.connection()
+	if err != nil {
+		return err
 	}
-	return c.conn.WriteJSON(message)
+	if err := conn.WriteJSON(message); err != nil {
+		_ = c.reconnectFrom(conn)
+		return err
+	}
+	return nil
 }
 
 // SendChat sends a text or media chat message and returns the sequence number.
@@ -92,24 +111,155 @@ func (c *WebSocketClient) Ping() error {
 	return c.Send(WSMessage{Cmd: "ping"})
 }
 
-// Receive reads and decodes one protocol message.
+// Receive reads and decodes one protocol message. Transient connection
+// failures are reconnected transparently and are not returned to the caller.
 func (c *WebSocketClient) Receive() (WSMessage, error) {
-	if c == nil || c.conn == nil {
-		return WSMessage{}, errors.New("gochat sdk: websocket is not connected")
+	for {
+		conn, err := c.connection()
+		if err != nil {
+			return WSMessage{}, err
+		}
+		var message WSMessage
+		if err := conn.ReadJSON(&message); err == nil {
+			return message, nil
+		}
+		if c.isClosed() {
+			return WSMessage{}, errors.New("gochat sdk: websocket is closed")
+		}
+		if err := c.reconnectFrom(conn); err != nil {
+			return WSMessage{}, fmt.Errorf("gochat sdk: websocket reconnect: %w", err)
+		}
 	}
-	var message WSMessage
-	if err := c.conn.ReadJSON(&message); err != nil {
-		return WSMessage{}, err
-	}
-	return message, nil
 }
 
-// Close closes the WebSocket connection.
+// Reconnect forces a reconnect using the original endpoint and handshake.
+func (c *WebSocketClient) Reconnect(ctx context.Context) error {
+	if c == nil {
+		return errors.New("gochat sdk: websocket is not connected")
+	}
+	return c.reconnect(ctx)
+}
+
+// Close closes the WebSocket connection and disables automatic reconnect.
 func (c *WebSocketClient) Close() error {
-	if c == nil || c.conn == nil {
+	if c == nil {
 		return nil
 	}
-	return c.conn.Close()
+	c.connMu.Lock()
+	if c.closed {
+		c.connMu.Unlock()
+		return nil
+	}
+	c.closed = true
+	conn := c.conn
+	c.conn = nil
+	c.connMu.Unlock()
+	if conn == nil {
+		return nil
+	}
+	return conn.Close()
+}
+
+func (c *WebSocketClient) connection() (*websocket.Conn, error) {
+	if c == nil {
+		return nil, errors.New("gochat sdk: websocket is not connected")
+	}
+	c.connMu.RLock()
+	conn, closed := c.conn, c.closed
+	c.connMu.RUnlock()
+	if closed {
+		return nil, errors.New("gochat sdk: websocket is closed")
+	}
+	if conn == nil {
+		if err := c.reconnect(context.Background()); err != nil {
+			return nil, err
+		}
+		c.connMu.RLock()
+		conn = c.conn
+		c.connMu.RUnlock()
+	}
+	if conn == nil {
+		return nil, errors.New("gochat sdk: websocket is not connected")
+	}
+	return conn, nil
+}
+
+func (c *WebSocketClient) isClosed() bool {
+	c.connMu.RLock()
+	defer c.connMu.RUnlock()
+	return c.closed
+}
+
+func (c *WebSocketClient) reconnectFrom(previous *websocket.Conn) error {
+	c.connMu.RLock()
+	if c.closed {
+		c.connMu.RUnlock()
+		return errors.New("gochat sdk: websocket is closed")
+	}
+	current := c.conn
+	c.connMu.RUnlock()
+	if current != previous && current != nil {
+		return nil
+	}
+	return c.reconnect(context.Background())
+}
+
+func (c *WebSocketClient) reconnect(ctx context.Context) error {
+	c.reconnectMu.Lock()
+	defer c.reconnectMu.Unlock()
+
+	c.connMu.RLock()
+	if c.closed {
+		c.connMu.RUnlock()
+		return errors.New("gochat sdk: websocket is closed")
+	}
+	c.connMu.RUnlock()
+
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(100*(1<<min(attempt-1, 4))) * time.Millisecond):
+			}
+		}
+		dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		conn, response, err := dialWebSocket(dialCtx, c.endpoint, c.headers)
+		cancel()
+		if err == nil {
+			c.connMu.Lock()
+			if c.closed {
+				c.connMu.Unlock()
+				_ = conn.Close()
+				return errors.New("gochat sdk: websocket is closed")
+			}
+			old := c.conn
+			c.conn = conn
+			c.connMu.Unlock()
+			if old != nil {
+				_ = old.Close()
+			}
+			return nil
+		}
+		if response != nil {
+			response.Body.Close()
+		}
+		lastErr = err
+	}
+	return lastErr
+}
+
+func dialWebSocket(ctx context.Context, endpoint string, headers http.Header) (*websocket.Conn, *http.Response, error) {
+	return (&websocket.Dialer{}).DialContext(ctx, endpoint, headers)
+}
+
+func cloneHeader(header http.Header) http.Header {
+	clone := make(http.Header, len(header))
+	for key, values := range header {
+		clone[key] = append([]string(nil), values...)
+	}
+	return clone
 }
 
 // WSMessage is the common WebSocket envelope.
@@ -133,6 +283,7 @@ type ChatMessage struct {
 type MessageReply struct {
 	Status    string `json:"status"`
 	MessageID int64  `json:"message_id"`
+	Duplicate bool   `json:"duplicate,omitempty"`
 }
 
 // DecodeData decodes a WebSocket data payload into a caller-provided value.
@@ -163,6 +314,13 @@ func (c *Client) websocketEndpoint() (string, error) {
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/ws"
 	parsed.RawQuery = ""
 	return parsed.String(), nil
+}
+
+func min(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func nextSequence() string {

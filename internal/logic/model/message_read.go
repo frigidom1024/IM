@@ -2,14 +2,31 @@ package model
 
 import "time"
 
-// UnreadCount 用户未读消息计数模型
-// 存储每个用户对每个发送者/群组的未读消息数量
+// UnreadCount stores one unread summary per recipient and private/group scope.
+//
+// Private messages use (UserID, FromID, GroupID=0). Group messages use
+// (UserID, FromID=0, GroupID). The latest sender is kept separately so group
+// messages from different senders share one aggregate row.
 type UnreadCount struct {
-	UserID   int64     `gorm:"column:user_id;primaryKey"`                    // 接收者ID
-	FromID   int64     `gorm:"column:from_id;primaryKey"`                    // 发送者ID（群聊时为0）
-	GroupID  int64     `gorm:"column:group_id;default:0"`                    // 群组ID（0表示私聊）
-	Count    int64     `gorm:"column:count;default:0"`                       // 未读数量
-	ReadAt   time.Time `gorm:"column:read_at;autoUpdateTime"`               // 最后阅读时间
+	UserID            int64      `gorm:"column:user_id;primaryKey" json:"user_id"`
+	FromID            int64      `gorm:"column:from_id;primaryKey" json:"from_id"`
+	GroupID           int64      `gorm:"column:group_id;primaryKey" json:"group_id"`
+	UnreadCount       int64      `gorm:"column:unread_count;not null;default:0" json:"unread_count"`
+	LatestMessageID   int64      `gorm:"column:latest_message_id" json:"latest_message_id,string,omitempty"`
+	LatestSenderID    int64      `gorm:"column:latest_sender_id" json:"latest_sender_id,omitempty"`
+	LatestMessageType string     `gorm:"column:latest_message_type;size:20;not null;default:text" json:"latest_message_type"`
+	LatestPreview     string     `gorm:"column:latest_preview;size:512;not null;default:''" json:"latest_preview"`
+	LatestMessageAt   *time.Time `gorm:"column:latest_message_at" json:"latest_message_at,omitempty"`
+	ReadAt            *time.Time `gorm:"column:read_at" json:"read_at,omitempty"`
+	CreatedAt         time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt         time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+}
+
+// UnreadTarget identifies one recipient aggregate to update with a message.
+type UnreadTarget struct {
+	UserID  int64
+	FromID  int64
+	GroupID int64
 }
 
 // TableName 指定表名

@@ -55,25 +55,42 @@ CREATE TABLE IF NOT EXISTS `group_member` (
 CREATE TABLE IF NOT EXISTS `message` (
   `id` BIGINT PRIMARY KEY COMMENT '消息ID(snowflake)',
   `from_id` BIGINT NOT NULL COMMENT '发送者ID',
+  `client_seq` VARCHAR(128) NULL COMMENT '发送方幂等序列号',
   `to_id` BIGINT DEFAULT 0 COMMENT '接收者ID(0表示群消息)',
   `group_id` BIGINT DEFAULT 0 COMMENT '群组ID(0表示单聊)',
   `msg_type` VARCHAR(20) NOT NULL COMMENT '类型:text/image/file/voice/video/mention',
   `content` TEXT NOT NULL COMMENT '消息内容(文字原文/多媒体FileMeta JSON)',
   `is_revoked` TINYINT DEFAULT 0 COMMENT '是否撤回:0否 1是',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_message_sender_seq(`from_id`, `client_seq`),
   INDEX idx_from(`from_id`),
   INDEX idx_to(`to_id`),
   INDEX idx_group(`group_id`),
   INDEX idx_created(`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息表';
 
--- 未读计数表（聚合存储每个用户对每个发送者/群组的未读消息数量）
+-- 会话级未读计数表
+-- 私聊聚合键: user_id + from_id + group_id(0)
+-- 群聊聚合键: user_id + from_id(0) + group_id
 CREATE TABLE IF NOT EXISTS `unread_count` (
-  `user_id` BIGINT NOT NULL COMMENT '接收者ID',
-  `from_id` BIGINT NOT NULL COMMENT '发送者ID（群聊时为0）',
-  `group_id` BIGINT DEFAULT 0 COMMENT '群组ID（0表示私聊）',
-  `count` BIGINT DEFAULT 0 COMMENT '未读数量',
-  `read_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `user_id` BIGINT NOT NULL COMMENT '收件人用户ID',
+  `from_id` BIGINT NOT NULL DEFAULT 0 COMMENT '私聊对方用户ID；群聊固定为0',
+  `group_id` BIGINT NOT NULL DEFAULT 0 COMMENT '群聊群组ID；私聊固定为0',
+  `unread_count` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '当前聚合范围内的未读总数',
+  `latest_message_id` BIGINT DEFAULT NULL COMMENT '最新消息ID',
+  `latest_sender_id` BIGINT DEFAULT NULL COMMENT '最新消息真实发送者ID',
+  `latest_message_type` VARCHAR(20) NOT NULL DEFAULT 'text' COMMENT '最新消息类型',
+  `latest_preview` VARCHAR(512) NOT NULL DEFAULT '' COMMENT '最新消息预览',
+  `latest_message_at` DATETIME(3) DEFAULT NULL COMMENT '最新消息时间',
+  `read_at` DATETIME(3) DEFAULT NULL COMMENT '最近一次清空已读的时间',
+  `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`user_id`, `from_id`, `group_id`),
-  INDEX idx_user(`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='未读计数表';
+  INDEX idx_unread_user_latest (`user_id`, `latest_message_at`),
+  INDEX idx_unread_user_count (`user_id`, `unread_count`),
+  CONSTRAINT chk_unread_scope CHECK (
+    (`group_id` = 0 AND `from_id` > 0)
+    OR (`group_id` > 0 AND `from_id` = 0)
+  ),
+  CONSTRAINT chk_unread_count_non_negative CHECK (`unread_count` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户会话未读聚合表';

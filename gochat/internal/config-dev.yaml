@@ -1,3 +1,7 @@
+environment: development
+cors:
+  allowed_origins:
+    - http://localhost:3000
 server:
   api_addr: ":8080"
   connect_addr: ":7000"

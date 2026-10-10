@@ -28,8 +28,10 @@ type DisconnectHandler interface {
 // MessageService 消息服务接口
 type MessageService interface {
 	Send(msg *model.Message) error
+	SendWithUnread(msg *model.Message, targets []model.UnreadTarget) error
+	GetByClientSeq(fromID int64, clientSeq string) (*model.Message, error)
 	GetByID(id int64) (*model.Message, error)
-	IncrUnread(userID, fromID, groupID int64) error
+	IncrUnread(userID, fromID, groupID int64, latestMessage *model.Message) error
 }
 
 // GroupService 群组服务接口

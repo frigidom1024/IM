@@ -200,7 +200,7 @@ GoChat 不修改任何表结构。用户映射逻辑如下：
 ### 场景：外部项目集成 GoChat 聊天
 
 ```
-External Demo (Python)              GoChat
+External Demo (Go SDK)              GoChat
   │                                      │
   │ 1. 启动 GoChat Docker 镜像            │
   │    docker compose up -d              │
@@ -223,9 +223,10 @@ External Demo (Python)              GoChat
 
 ## 第五部分：可运行的集成示例
 
-仓库提供了一个不依赖第三方 Python 包的最小外部应用，可直接验证外部认证、好友接口、WebSocket 私聊和消息持久化：
+仓库提供了一个不依赖第三方运行时依赖的最小外部应用，可直接验证外部认证、好友接口、WebSocket 私聊和消息持久化。后端系统也可以直接使用仓库提供的 Go SDK：
 
 - [examples/external-integration-demo/README.md](../examples/external-integration-demo/README.md)
+- [后端 Go SDK](../sdk/README.md)
 
 ## 第六部分：常见问题
 

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,10 +27,18 @@ type ExternalAuthHandler struct {
 
 // NewExternalAuthHandler 创建外部认证处理器
 func NewExternalAuthHandler(userRepo registry.UserRepository, apiURL string) *ExternalAuthHandler {
+	return NewExternalAuthHandlerWithTimeout(userRepo, apiURL, 10*time.Second)
+}
+
+// NewExternalAuthHandlerWithTimeout configures the outbound external-user timeout.
+func NewExternalAuthHandlerWithTimeout(userRepo registry.UserRepository, apiURL string, timeout time.Duration) *ExternalAuthHandler {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 	return &ExternalAuthHandler{
 		userRepo:   userRepo,
 		apiURL:     apiURL,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: &http.Client{Timeout: timeout},
 	}
 }
 
@@ -41,7 +50,7 @@ func (h *ExternalAuthHandler) ExternalAuth(c *gin.Context) {
 		return
 	}
 
-	extUser, err := h.fetchExternalUser(token)
+	extUser, err := h.fetchExternalUser(c.Request.Context(), token)
 	if err != nil {
 		logger.Warn("获取外部用户信息失败", zap.Error(err))
 		errors.RespondError(c, errors.New(errors.CodeUnauthorized, "认证失败"))
@@ -102,8 +111,8 @@ type ExternalUser struct {
 	Avatar string `json:"avatar,omitempty"`
 }
 
-func (h *ExternalAuthHandler) fetchExternalUser(token string) (*ExternalUser, error) {
-	req, err := http.NewRequest("GET", h.apiURL, nil)
+func (h *ExternalAuthHandler) fetchExternalUser(ctx context.Context, token string) (*ExternalUser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
 	}
@@ -116,8 +125,7 @@ func (h *ExternalAuthHandler) fetchExternalUser(token string) (*ExternalUser, er
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("外部API返回 %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("外部API返回状态码 %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -132,6 +140,9 @@ func (h *ExternalAuthHandler) fetchExternalUser(token string) (*ExternalUser, er
 
 	if extUser.ID == "" {
 		return nil, fmt.Errorf("外部API未返回用户ID")
+	}
+	if extUser.Name == "" {
+		return nil, fmt.Errorf("外部API未返回用户名称")
 	}
 
 	return &extUser, nil

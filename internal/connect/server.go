@@ -4,8 +4,10 @@ import (
 	"context"
 	"gochat/internal/pkg/logger"
 	"gochat/internal/pkg/util"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,8 +48,10 @@ func (c *wsConnection) rateLimited() bool {
 
 // WsConnServer WebSocket连接服务器实现
 type WsConnServer struct {
-	conns    sync.Map // string(userID) -> *wsConnection
-	registry *HandlerRegistry
+	conns      sync.Map // string(userID) -> *wsConnection
+	registry   *HandlerRegistry
+	serverMu   sync.Mutex
+	httpServer *http.Server
 }
 
 // NewWsConnServer 创建新的WebSocket服务器
@@ -64,18 +68,14 @@ func (s *WsConnServer) Registry() *HandlerRegistry {
 
 // HandleWebSocket 处理WebSocket连接请求
 func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	token := r.Header.Get("Authorization")
+	token := normalizeWebSocketToken(r.Header.Get("Authorization"))
 	if token == "" {
-		token = r.URL.Query().Get("token")
+		token = normalizeWebSocketToken(r.URL.Query().Get("token"))
 	}
 	if token == "" {
 		logger.Warn("WebSocket连接失败: 缺少token")
 		http.Error(w, "Missing token", http.StatusUnauthorized)
 		return
-	}
-
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
 	}
 
 	claims, err := util.ParseToken(token)
@@ -113,6 +113,17 @@ func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	go wsConn.readPump()
 	go wsConn.writePump()
+}
+
+func normalizeWebSocketToken(value string) string {
+	parts := strings.Fields(strings.TrimSpace(value))
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return parts[1]
+	}
+	if len(parts) == 1 && !strings.EqualFold(parts[0], "Bearer") {
+		return parts[0]
+	}
+	return ""
 }
 
 // Send 向指定用户发送消息（Message 接口）
@@ -190,14 +201,53 @@ func (s *WsConnServer) IsOnline(userID string) bool {
 
 // Run 启动WebSocket服务器
 func (s *WsConnServer) Run(addr string) error {
+	return s.RunReady(context.Background(), addr, nil)
+}
+
+// RunReady binds the listener before reporting readiness.
+func (s *WsConnServer) RunReady(ctx context.Context, addr string, ready chan<- struct{}) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.HandleWebSocket)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"status":"ok"}`))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
 	srv := &http.Server{Addr: addr, Handler: mux}
+	s.serverMu.Lock()
+	s.httpServer = srv
+	s.serverMu.Unlock()
+	if ready != nil {
+		close(ready)
+	}
 	logger.Info("启动WebSocket服务器", zap.String("addr", addr))
-	return srv.ListenAndServe()
+	return srv.Serve(listener)
+}
+
+// Shutdown closes active connections and stops the WebSocket listener.
+func (s *WsConnServer) Shutdown(ctx context.Context) error {
+	s.conns.Range(func(_, value any) bool {
+		_ = value.(*wsConnection).Close()
+		return true
+	})
+	s.serverMu.Lock()
+	server := s.httpServer
+	s.serverMu.Unlock()
+	if server == nil {
+		return nil
+	}
+	return server.Shutdown(ctx)
 }
 
 // RunWithServeMux 使用已有的ServeMux运行

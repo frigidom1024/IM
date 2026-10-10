@@ -68,8 +68,13 @@ erDiagram
         bigint user_id PK,FK "接收者ID"
         bigint from_id PK,FK "发送者ID(群聊0)"
         bigint group_id PK "群组ID(0私聊)"
-        bigint count "未读数量"
-        timestamp read_at
+        bigint unread_count "会话未读数量"
+        bigint latest_message_id "最新消息ID"
+        bigint latest_sender_id "最新消息发送者"
+        varchar latest_message_type "最新消息类型"
+        varchar latest_preview "最新消息预览"
+        datetime latest_message_at "最新消息时间"
+        datetime read_at "最后阅读时间"
     }
 ```
 
@@ -102,7 +107,7 @@ erDiagram
 | remark | VARCHAR(64) | 好友备注 |
 | created_at | TIMESTAMP | 添加时间 |
 
-唯一约束: `uk_user_friend(user_id, friend_id)`  
+唯一约束: `uk_user_friend(user_id, friend_id)`
 索引: `idx_user`
 
 ---
@@ -133,7 +138,7 @@ erDiagram
 | role | TINYINT | 0普通 1管理员 2群主 |
 | joined_at | TIMESTAMP | 加入时间 |
 
-唯一约束: `uk_group_user(group_id, user_id)`  
+唯一约束: `uk_group_user(group_id, user_id)`
 索引: `idx_group`, `idx_user`
 
 ---
@@ -144,6 +149,7 @@ erDiagram
 |------|------|------|
 | id | BIGINT | 消息ID(snowflake生成) |
 | from_id | BIGINT | 发送者ID |
+| client_seq | VARCHAR(128) | 发送方幂等序列号，可为空 |
 | to_id | BIGINT | 接收者ID(0表示群消息) |
 | group_id | BIGINT | 群组ID(0表示单聊) |
 | msg_type | TINYINT | 1文字 2图片 3文件 4@提醒 |
@@ -151,22 +157,31 @@ erDiagram
 | is_revoked | TINYINT | 0正常 1已撤回 |
 | created_at | TIMESTAMP | 发送时间 |
 
-索引: `idx_from`, `idx_to`, `idx_group`, `idx_created`
+唯一约束: `uk_message_sender_seq(from_id, client_seq)`；索引: `idx_from`, `idx_to`, `idx_group`, `idx_created`
 
 ---
 
-### 6. `unread_count` — 未读计数表
+### 6. `unread_count` — 会话级未读聚合表
+
+每个用户的每个私聊或群聊范围最多一条记录，不按单条消息创建未读记录。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| user_id | BIGINT | 接收者ID |
-| from_id | BIGINT | 发送者ID(群聊时为0) |
-| group_id | BIGINT | 群组ID(0表示私聊) |
-| count | BIGINT | 未读数量 |
-| read_at | TIMESTAMP | 最后阅读时间 |
+| user_id | BIGINT | 收件人用户ID |
+| from_id | BIGINT | 私聊对方用户ID；群聊固定为0 |
+| group_id | BIGINT | 群聊群组ID；私聊固定为0 |
+| unread_count | BIGINT | 当前范围的未读总数 |
+| latest_message_id | BIGINT | 最新消息ID |
+| latest_sender_id | BIGINT | 最新消息真实发送者ID |
+| latest_message_type | VARCHAR(20) | 最新消息类型 |
+| latest_preview | VARCHAR(512) | 最新消息预览 |
+| latest_message_at | DATETIME(3) | 最新消息时间 |
+| read_at | DATETIME(3) | 最后阅读时间 |
+| created_at | DATETIME(3) | 创建时间 |
+| updated_at | DATETIME(3) | 更新时间 |
 
-主键: `(user_id, from_id, group_id)`  
-索引: `idx_user`
+主键: `(user_id, from_id, group_id)`
+私聊使用 `group_id=0`，群聊使用 `from_id=0`。
 
 ---
 

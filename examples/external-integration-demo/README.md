@@ -1,9 +1,9 @@
 # 外部应用集成 E2E 演示
 
 这个目录是一个最小化的“外部应用”，用于验证 GoChat 能否被其它应用集成。
-它不依赖 Vue、Node 服务端框架或第三方运行时依赖，只提供：
+它不依赖 Vue、Node 服务端框架或第三方运行时依赖，外部应用本身使用 GoChat Go SDK 提供用户信息接口，只提供：
 
-- 外部用户信息接口：`GET /api/user/info`
+- 外部用户信息接口：`GET /api/user/info`（由 `sdk.NewUserInfoHandler` 提供）
 - 一个简单的浏览器页面：选择 Alice / Bob，并调用 GoChat 外部认证和 WebSocket
 - 一个自动化 E2E 脚本：验证外部认证、好友接口、WebSocket 私聊和消息持久化
 

@@ -1,6 +1,6 @@
 APP_NAME = im-server
 
-.PHONY: all build run test docker-build docker-up docker-down docker-logs docker-restart dev-web clean
+.PHONY: all build run test test-integration test-e2e docker-build docker-up docker-down docker-logs docker-restart dev-web clean
 
 all: build
 
@@ -12,7 +12,13 @@ run:
 	go run -tags=etcd ./cmd/im-server
 
 test:
-	go test -tags=etcd ./...
+	go test ./...
+
+test-integration:
+	go test -tags=integration ./...
+
+test-e2e:
+	powershell -NoProfile -ExecutionPolicy Bypass -File examples/external-integration-demo/run-e2e.ps1
 
 # ========== Docker ==========
 docker-build:

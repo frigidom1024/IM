@@ -34,6 +34,7 @@
 │   └── config/           # 配置文件
 ├── web/                  # Vue 3 前端
 ├── proto/                # protobuf 定义
+├── sdk/                  # 后端 Go SDK（认证、API、WebSocket、外部用户适配器）
 ├── examples/             # 外部系统集成示例与 E2E 测试
 ├── gochat/               # Docker Compose 编排及配置
 ├── docs/                 # 文档（数据库、WebSocket 协议、集成指南等）
@@ -81,13 +82,26 @@ cd web && npm install && npm run dev
 
 ```bash
 make build     # 编译后端
-make test      # 运行测试
+make test      # 运行无外部依赖的测试
+make test-integration # 运行需要 MySQL/Redis/etcd 的集成测试
 make run       # 直接运行后端
 ```
 
 ## 外部系统集成
 
 GoChat 支持作为微服务集成到其他系统，外部系统只需提供一个「获取用户信息」的 API 即可打通认证。详见 [docs/integration.md](docs/integration.md)。
+
+## CI 质量门禁
+
+GitHub Actions 会自动执行：
+
+- `go test ./...`
+- `go test -race ./...`
+- `go vet ./...`
+- `go build ./...`
+- 两套 Docker Compose 配置校验
+
+工作流文件：`.github/workflows/p0-quality.yml`
 
 ## 文档
 
@@ -96,6 +110,8 @@ GoChat 支持作为微服务集成到其他系统，外部系统只需提供一�
 - [WebSocket 协议](docs/websocket.md)
 - [外部系统集成指南](docs/integration.md)
 - [外部集成 E2E 演示](examples/external-integration-demo/README.md)
+- [后端 Go SDK](sdk/README.md)
+- [P0 运维与生命周期](docs/p0-operations.md)
 
 ## License
 

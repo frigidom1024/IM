@@ -1,3 +1,5 @@
+//go:build integration
+
 package unit_test
 
 import (
@@ -26,7 +28,7 @@ func TestFriendModel(t *testing.T) {
 	friendRepo := registry.NewFriendRepository()
 
 	// 使用测试数据中的用户 (frank=7, grace=8)
-	userID := int64(7)  // frank
+	userID := int64(7)   // frank
 	friendID := int64(8) // grace
 
 	// 清理可能存在的测试好友关系
@@ -135,7 +137,7 @@ func TestFriendModelQueryExisting(t *testing.T) {
 	friendRepo := registry.NewFriendRepository()
 
 	// 测试查询已有的好友关系 (alice=2, bob=3)
-	userID := int64(2)  // alice
+	userID := int64(2)   // alice
 	friendID := int64(3) // bob
 
 	// 测试获取好友列表
@@ -185,7 +187,7 @@ func TestFriendModel双向关系(t *testing.T) {
 	friendRepo := registry.NewFriendRepository()
 
 	// 验证已有的双向好友关系 (alice=2, bob=3)
-	userID := int64(2)  // alice
+	userID := int64(2)   // alice
 	friendID := int64(3) // bob
 
 	// 获取 alice 的好友

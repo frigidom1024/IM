@@ -3,26 +3,35 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// AuthConfig 认证配置
+// CORSConfig 跨域配置
+type CORSConfig struct {
+	AllowedOrigins []string `yaml:"allowed_origins"`
+}
+
 type AuthConfig struct {
-	Mode            string `yaml:"mode"`              // builtin | external
-	ExternalUserAPI string `yaml:"external_user_api"` // 外部用户信息API
+	Mode                   string `yaml:"mode"`              // builtin | external
+	ExternalUserAPI        string `yaml:"external_user_api"` // 外部用户信息API
+	RateLimitPerMinute     int    `yaml:"rate_limit_per_minute"`
+	ExternalTimeoutSeconds int    `yaml:"external_timeout_seconds"`
 }
 
 // Config 全局配置
 type Config struct {
-	Server ServerConfig `yaml:"server"`
-	Auth   AuthConfig   `yaml:"auth"`
-	MySQL  MySQLConfig  `yaml:"mysql"`
-	Redis  RedisConfig  `yaml:"redis"`
-	Etcd   EtcdConfig   `yaml:"etcd"`
-	MinIO  MinIOConfig  `yaml:"minio"`
-	JWT    JWTConfig    `yaml:"jwt"`
-	Logger LoggerConfig `yaml:"logger"`
+	Environment string       `yaml:"environment"`
+	CORS        CORSConfig   `yaml:"cors"`
+	Server      ServerConfig `yaml:"server"`
+	Auth        AuthConfig   `yaml:"auth"`
+	MySQL       MySQLConfig  `yaml:"mysql"`
+	Redis       RedisConfig  `yaml:"redis"`
+	Etcd        EtcdConfig   `yaml:"etcd"`
+	MinIO       MinIOConfig  `yaml:"minio"`
+	JWT         JWTConfig    `yaml:"jwt"`
+	Logger      LoggerConfig `yaml:"logger"`
 }
 
 // ServerConfig 服务器配置
@@ -77,6 +86,56 @@ type LoggerConfig struct {
 }
 
 var GlobalConfig *Config
+
+// Validate checks the configuration required by the single-instance runtime.
+func (c *Config) Validate() error {
+	if c == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if strings.TrimSpace(c.Server.APIAddr) == "" {
+		return fmt.Errorf("server.api_addr is required")
+	}
+	if strings.TrimSpace(c.Server.ConnectAddr) == "" {
+		return fmt.Errorf("server.connect_addr is required")
+	}
+	if strings.TrimSpace(c.MySQL.Host) == "" || c.MySQL.Port <= 0 || strings.TrimSpace(c.MySQL.Database) == "" {
+		return fmt.Errorf("mysql host, port and database are required")
+	}
+	if strings.TrimSpace(c.MinIO.Endpoint) == "" || strings.TrimSpace(c.MinIO.Bucket) == "" {
+		return fmt.Errorf("minio endpoint and bucket are required")
+	}
+	if strings.TrimSpace(c.JWT.Secret) == "" {
+		return fmt.Errorf("jwt.secret is required")
+	}
+	if c.JWT.ExpireTime <= 0 {
+		return fmt.Errorf("jwt.expire_time must be greater than zero")
+	}
+
+	environment := strings.ToLower(strings.TrimSpace(c.Environment))
+	if environment == "" {
+		environment = strings.ToLower(strings.TrimSpace(os.Getenv("GOCHAT_ENV")))
+	}
+	if environment == "production" {
+		if c.JWT.Secret == "gochat-secret-key-change-in-production" {
+			return fmt.Errorf("jwt.secret must be changed in production")
+		}
+		if len(c.CORS.AllowedOrigins) == 0 {
+			return fmt.Errorf("cors.allowed_origins is required in production")
+		}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(c.Auth.Mode)) {
+	case "", "builtin":
+		return nil
+	case "external":
+		if strings.TrimSpace(c.Auth.ExternalUserAPI) == "" {
+			return fmt.Errorf("auth.external_user_api is required in external mode")
+		}
+		return nil
+	default:
+		return fmt.Errorf("auth.mode must be builtin or external")
+	}
+}
 
 // Load 加载配置文件
 func Load(path string) (*Config, error) {

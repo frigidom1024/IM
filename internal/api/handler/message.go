@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -13,17 +14,17 @@ import (
 
 // MessageWithSender 消息 + 发送者信息
 type MessageWithSender struct {
-	ID          int64              `json:"id"`
-	FromID      int64              `json:"from_id"`
-	ToID        int64              `json:"to_id"`
-	GroupID     int64              `json:"group_id"`
-	MsgType     string             `json:"msg_type"`
-	Content     string             `json:"content"`
-	IsRevoked   bool               `json:"is_revoked"`
-	CreatedAt   string             `json:"created_at"`
-	SenderName  string             `json:"sender_name"`
-	SenderAvata string             `json:"sender_avatar"`
-	SenderID    int64              `json:"sender_id"`
+	ID          int64  `json:"id"`
+	FromID      int64  `json:"from_id"`
+	ToID        int64  `json:"to_id"`
+	GroupID     int64  `json:"group_id"`
+	MsgType     string `json:"msg_type"`
+	Content     string `json:"content"`
+	IsRevoked   bool   `json:"is_revoked"`
+	CreatedAt   string `json:"created_at"`
+	SenderName  string `json:"sender_name"`
+	SenderAvata string `json:"sender_avatar"`
+	SenderID    int64  `json:"sender_id"`
 }
 
 func enrichMessages(msgs []*model.Message, userRepo registry.UserRepository) []MessageWithSender {
@@ -94,7 +95,12 @@ func (h *MessageHandler) GetPrivateMessages(c *gin.Context) {
 		return
 	}
 
-	messages, err := h.messageService.GetPrivateMessages(userID, targetID, 50, 0)
+	limit, offset, pageErr := parseMessagePage(c)
+	if pageErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": pageErr.Error()})
+		return
+	}
+	messages, err := h.messageService.GetPrivateMessages(userID, targetID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
 		return
@@ -121,7 +127,12 @@ func (h *MessageHandler) GetGroupMessages(c *gin.Context) {
 		return
 	}
 
-	messages, err := h.messageService.GetGroupMessages(groupID, 50, 0)
+	limit, offset, pageErr := parseMessagePage(c)
+	if pageErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": pageErr.Error()})
+		return
+	}
+	messages, err := h.messageService.GetGroupMessages(groupID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
 		return
@@ -142,14 +153,15 @@ func (h *MessageHandler) MarkRead(c *gin.Context) {
 	}
 
 	var req struct {
-		FromID int64 `json:"from_id"`
+		FromID  int64 `json:"from_id"`
+		GroupID int64 `json:"group_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
 		return
 	}
 
-	if err := h.messageService.ClearUnread(userID, req.FromID, 0); err != nil {
+	if err := h.messageService.ClearUnread(userID, req.FromID, req.GroupID); err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
 		return
 	}
@@ -173,11 +185,37 @@ func (h *MessageHandler) GetUnreadCount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
 		return
 	}
+	unreadList, err := h.messageService.GetUnreadList(userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"count": count,
+			"count":              count,
+			"total_unread_count": count,
+			"unread_list":        unreadList,
 		},
 	})
+}
+func parseMessagePage(c *gin.Context) (int, int64, error) {
+	limit := 50
+	if value := c.Query("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed <= 0 || parsed > 100 {
+			return 0, 0, fmt.Errorf("limit必须在1到100之间")
+		}
+		limit = parsed
+	}
+	offset := int64(0)
+	if value := c.Query("offset"); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || parsed < 0 {
+			return 0, 0, fmt.Errorf("offset必须是非负整数")
+		}
+		offset = parsed
+	}
+	return limit, offset, nil
 }
