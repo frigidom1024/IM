@@ -111,7 +111,10 @@ GitHub Actions 会自动执行：
 - [外部系统集成指南](docs/integration.md)
 - [外部集成 E2E 演示](examples/external-integration-demo/README.md)
 - [后端 Go SDK](sdk/README.md)
+<<<<<<< Updated upstream
 - [P0 运维与生命周期](docs/p0-operations.md)
+=======
+>>>>>>> Stashed changes
 
 ## License
 
