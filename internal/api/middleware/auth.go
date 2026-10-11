@@ -5,6 +5,7 @@ import (
 
 	"gochat/internal/pkg/errors"
 	"gochat/internal/pkg/logger"
+	"gochat/internal/pkg/telemetry"
 	"gochat/internal/pkg/util"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,8 @@ import (
 // AuthMiddleware JWT认证中间件
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		authenticated := false
+		defer func() { telemetry.Default.Auth("http", authenticated) }()
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			logger.Warn("未提供认证token", zap.String("path", c.Request.URL.Path))
@@ -43,6 +46,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		logger.Debug("Token解析成功", zap.Int("userID", claims.UserID))
 		// 将用户ID存入上下文
 		c.Set("userID", int64(claims.UserID))
+		authenticated = true
 		c.Next()
 	}
 }

@@ -53,6 +53,7 @@ type MySQLConfig struct {
 
 // RedisConfig Redis配置
 type RedisConfig struct {
+	Enabled  bool   `yaml:"enabled"`
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	Password string `yaml:"password"`
@@ -61,6 +62,7 @@ type RedisConfig struct {
 
 // EtcdConfig etcd配置
 type EtcdConfig struct {
+	Enabled   bool     `yaml:"enabled"`
 	Endpoints []string `yaml:"endpoints"`
 }
 
@@ -111,6 +113,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("jwt.expire_time must be greater than zero")
 	}
 
+	if c.Redis.Enabled && (strings.TrimSpace(c.Redis.Host) == "" || c.Redis.Port <= 0) {
+		return fmt.Errorf("redis host and port are required when enabled")
+	}
+	if c.Etcd.Enabled && len(c.Etcd.Endpoints) == 0 {
+		return fmt.Errorf("etcd endpoints are required when enabled")
+	}
 	environment := strings.ToLower(strings.TrimSpace(c.Environment))
 	if environment == "" {
 		environment = strings.ToLower(strings.TrimSpace(os.Getenv("GOCHAT_ENV")))

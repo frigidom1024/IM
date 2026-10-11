@@ -10,7 +10,9 @@ import (
 	"gochat/internal/api/handler"
 	"gochat/internal/api/middleware"
 	"gochat/internal/logic/registry"
+	"gochat/internal/pkg/errors"
 	"gochat/internal/pkg/minio"
+	"gochat/internal/pkg/telemetry"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,24 +39,36 @@ func NewRouter(
 	externalTimeoutSeconds int,
 	allowedOrigins []string,
 	ready func() bool,
+	options ...RouterOption,
 ) *Router {
+	opts := routerOptions{timeout: 2 * time.Second}
+	for _, option := range options {
+		option(&opts)
+	}
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
+	engine.HandleMethodNotAllowed = true
+	engine.Use(middleware.Envelopes(), middleware.Metrics(), middleware.Recovery())
 	engine.Use(middleware.CORS(allowedOrigins))
-	engine.Use(gin.Logger(), gin.Recovery())
+	engine.NoRoute(func(c *gin.Context) { errors.RespondError(c, errors.New(errors.CodeNotFound, "route not found")) })
+	engine.NoMethod(func(c *gin.Context) {
+		errors.RespondError(c, errors.New(errors.CodeMethodNotAllowed, "method not allowed"))
+	})
 
+	engine.GET("/metrics", gin.WrapH(telemetry.Default))
 	engine.GET("/healthz", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().Unix()})
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().Unix(), "code": 0, "message": "ok", "data": nil})
 	})
 	engine.GET("/livez", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().Unix()})
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().Unix(), "code": 0, "message": "ok", "data": nil})
 	})
 	engine.GET("/readyz", func(c *gin.Context) {
-		if ready == nil || ready() {
-			c.JSON(http.StatusOK, gin.H{"status": "ready"})
+		dependencies, dependenciesReady := opts.dependencies(c.Request.Context())
+		if (ready == nil || ready()) && dependenciesReady {
+			c.JSON(http.StatusOK, gin.H{"status": "ready", "code": 0, "message": "ready", "data": gin.H{"dependencies": dependencies}})
 			return
 		}
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready", "code": errors.CodeNotReady, "message": "not ready", "data": gin.H{"dependencies": dependencies}})
 	})
 
 	userHandler := handler.NewUserHandler(userRepo)

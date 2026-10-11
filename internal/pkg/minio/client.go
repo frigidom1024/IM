@@ -41,7 +41,8 @@ func NewClient(cfg *config.MinIOConfig) (*Client, error) {
 		return nil, fmt.Errorf("创建 MinIO 客户端失败: %w", err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	if err := client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{}); err != nil {
 		exists, errBucket := client.BucketExists(ctx, cfg.Bucket)
 		if errBucket != nil || !exists {
@@ -83,6 +84,21 @@ func (c *Client) Delete(ctx context.Context, objectPath string) error {
 	err := c.client.RemoveObject(ctx, c.bucket, objectPath, minio.RemoveObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("删除文件失败: %w", err)
+	}
+	return nil
+}
+
+// CheckReady verifies the configured bucket using the caller's timeout.
+func (c *Client) CheckReady(ctx context.Context) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("minio not initialized")
+	}
+	exists, err := c.client.BucketExists(ctx, c.bucket)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("minio bucket unavailable")
 	}
 	return nil
 }

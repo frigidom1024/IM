@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"gochat/internal/api"
 	"gochat/internal/connect"
 	"gochat/internal/logic/registry"
@@ -18,6 +20,7 @@ import (
 	"gochat/internal/pkg/minio"
 	"gochat/internal/pkg/mysql"
 	"gochat/internal/pkg/snowflake"
+	"gochat/internal/pkg/telemetry"
 	"gochat/internal/pkg/util"
 
 	"go.uber.org/zap"
@@ -25,11 +28,13 @@ import (
 
 // Application 负责组装并运行 GoChat 的基础设施、HTTP API 和 WebSocket 服务。
 type Application struct {
-	cfg       *config.Config
-	apiServer *api.Router
-	wsServer  *connect.WsConnServer
-	ready     atomic.Bool
-	closeOnce sync.Once
+	cfg         *config.Config
+	apiServer   *api.Router
+	wsServer    *connect.WsConnServer
+	ready       atomic.Bool
+	closeOnce   sync.Once
+	redisClient *redis.Client
+	etcdClient  *clientv3.Client
 }
 
 // New 创建应用并初始化应用运行所需的基础设施。
@@ -76,6 +81,28 @@ func New(cfg *config.Config) (*Application, error) {
 	groupService := service.NewGroupService(groupRepo, groupMemberRepo)
 
 	app := &Application{cfg: cfg}
+	sqlDB, err := mysql.Client.DB()
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("get database pool: %w", err)
+	}
+	telemetry.Default.SetDBStats(sqlDB.Stats)
+	checks := map[string]api.DependencyCheck{"mysql": sqlDB.PingContext, "minio": minioClient.CheckReady, "redis": nil, "etcd": nil}
+	if cfg.Redis.Enabled {
+		app.redisClient = redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB, DialTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second, ContextTimeoutEnabled: true})
+		checks["redis"] = func(ctx context.Context) error { return app.redisClient.Ping(ctx).Err() }
+	}
+	if cfg.Etcd.Enabled {
+		app.etcdClient, err = clientv3.New(clientv3.Config{Endpoints: cfg.Etcd.Endpoints, DialTimeout: 2 * time.Second})
+		if err != nil {
+			app.Close()
+			return nil, fmt.Errorf("initialize etcd: %w", err)
+		}
+		checks["etcd"] = func(ctx context.Context) error {
+			_, err := app.etcdClient.Get(ctx, "/gochat/readiness", clientv3.WithLimit(1))
+			return err
+		}
+	}
 	app.apiServer = api.NewRouter(
 		userRepo,
 		friendRepo,
@@ -90,6 +117,7 @@ func New(cfg *config.Config) (*Application, error) {
 		cfg.Auth.ExternalTimeoutSeconds,
 		cfg.CORS.AllowedOrigins,
 		app.IsReady,
+		api.WithDependencyChecks(2*time.Second, checks),
 	)
 	app.wsServer = newWebSocketServer(messageService, groupService)
 	return app, nil
@@ -181,6 +209,13 @@ func (a *Application) shutdown() error {
 func (a *Application) Close() {
 	a.closeOnce.Do(func() {
 		a.ready.Store(false)
+		if a.redisClient != nil {
+			_ = a.redisClient.Close()
+		}
+		if a.etcdClient != nil {
+			_ = a.etcdClient.Close()
+		}
+		telemetry.Default.SetDBStats(nil)
 		_ = mysql.Close()
 		_ = logger.Sync()
 	})
