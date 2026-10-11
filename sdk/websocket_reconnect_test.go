@@ -25,7 +25,12 @@ func TestWebSocketReceiveReconnectsAfterDisconnect(t *testing.T) {
 			return
 		}
 		_ = conn.WriteJSON(WSMessage{Cmd: "ping"})
-		select {}
+		defer conn.Close()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
 	}))
 	defer server.Close()
 

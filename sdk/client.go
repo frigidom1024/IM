@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -37,7 +38,7 @@ func WithHTTPClient(httpClient *http.Client) Option {
 // WithToken sets the GoChat JWT used by authenticated requests.
 func WithToken(token string) Option {
 	return func(c *Client) {
-		c.token = NormalizeToken(token)
+		c.auth = &tokenState{token: NormalizeToken(token)}
 	}
 }
 
@@ -54,8 +55,12 @@ func WithWebSocketURL(endpoint string) Option {
 type Client struct {
 	baseURL      string
 	httpClient   *http.Client
-	token        string
+	auth         *tokenState
 	websocketURL string
+	readRetries  int
+	retryDelay   time.Duration
+	refresh      TokenRefreshFunc
+	logger       Logger
 }
 
 // NewClient creates a GoChat SDK client.
@@ -74,6 +79,7 @@ func NewClient(baseURL string, options ...Option) (*Client, error) {
 
 	client := &Client{
 		baseURL:    baseURL,
+		auth:       &tokenState{},
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}
 	for _, option := range options {
@@ -89,7 +95,7 @@ func NewClient(baseURL string, options ...Option) (*Client, error) {
 // and derive per-user clients in a backend application.
 func (c *Client) WithToken(token string) *Client {
 	clone := *c
-	clone.token = NormalizeToken(token)
+	clone.auth = &tokenState{token: NormalizeToken(token)}
 	return &clone
 }
 
@@ -248,37 +254,66 @@ func (c *Client) Upload(ctx context.Context, request UploadRequest) (*FileMeta, 
 		return nil, errors.New("gochat sdk: upload type is required")
 	}
 
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("type", request.Type); err != nil {
-		return nil, fmt.Errorf("gochat sdk: write upload type: %w", err)
-	}
-	partHeader := make(textproto.MIMEHeader)
-	partHeader["Content-Disposition"] = []string{fmt.Sprintf(`form-data; name="file"; filename="%s"`, request.Filename)}
-	if request.ContentType != "" {
-		partHeader["Content-Type"] = []string{request.ContentType}
-	}
-	part, err := writer.CreatePart(partHeader)
-	if err != nil {
-		return nil, fmt.Errorf("gochat sdk: create upload part: %w", err)
-	}
-	if _, err := io.Copy(part, request.File); err != nil {
-		return nil, fmt.Errorf("gochat sdk: read upload file: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return nil, fmt.Errorf("gochat sdk: close upload body: %w", err)
-	}
-
+	reader, body := io.Pipe()
+	writer := multipart.NewWriter(body)
+	contentType := writer.FormDataContentType()
+	done := make(chan error, 1)
+	go func() {
+		err := writer.WriteField("type", request.Type)
+		if err == nil {
+			header := make(textproto.MIMEHeader)
+			header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": request.Filename}))
+			if request.ContentType != "" {
+				header.Set("Content-Type", request.ContentType)
+			}
+			var part io.Writer
+			part, err = writer.CreatePart(header)
+			if err == nil {
+				_, err = io.Copy(part, &progressReader{reader: request.File, total: request.Size, progress: request.Progress})
+			}
+		}
+		if err == nil {
+			err = writer.Close()
+		}
+		body.CloseWithError(err)
+		done <- err
+	}()
 	var response FileMeta
-	err = c.doAuthenticatedWithContentType(ctx, http.MethodPost, "/api/upload", &body, writer.FormDataContentType(), &response)
+	err := c.doAuthenticatedWithContentType(ctx, http.MethodPost, "/api/upload", reader, contentType, &response)
+	reader.CloseWithError(err)
+	// An early server rejection may stop consumption. Do not wait for a caller's
+	// reader that can block indefinitely; closing the pipe unblocks pending writes.
+	select {
+	case producerErr := <-done:
+		if err == nil {
+			err = producerErr
+		}
+	default:
+	}
 	return &response, err
 }
 
-func (c *Client) doAuthenticated(ctx context.Context, method, path string, payload, output any) error {
-	if c.token == "" {
-		return ErrMissingToken
+type progressReader struct {
+	reader      io.Reader
+	sent, total int64
+	progress    func(int64, int64)
+}
+
+func (r *progressReader) Read(buffer []byte) (int, error) {
+	n, err := r.reader.Read(buffer)
+	r.sent += int64(n)
+	if n > 0 && r.progress != nil {
+		r.progress(r.sent, r.total)
 	}
-	return c.do(ctx, method, path, c.token, payload, output)
+	return n, err
+}
+
+func (c *Client) doAuthenticated(ctx context.Context, method, path string, payload, output any) error {
+	token, err := c.authToken(ctx)
+	if err != nil {
+		return err
+	}
+	return c.do(ctx, method, path, token, payload, output)
 }
 
 func (c *Client) do(ctx context.Context, method, path, token string, payload, output any) error {
@@ -286,10 +321,11 @@ func (c *Client) do(ctx context.Context, method, path, token string, payload, ou
 }
 
 func (c *Client) doAuthenticatedWithContentType(ctx context.Context, method, path string, payload io.Reader, contentType string, output any) error {
-	if c.token == "" {
-		return ErrMissingToken
+	token, err := c.authToken(ctx)
+	if err != nil {
+		return err
 	}
-	return c.doWithReader(ctx, method, path, c.token, payload, contentType, output)
+	return c.doWithReader(ctx, method, path, token, payload, contentType, output)
 }
 
 func (c *Client) doWithToken(ctx context.Context, method, path, token string, payload any, contentType string, output any) error {
@@ -317,7 +353,37 @@ func (c *Client) doWithReader(ctx context.Context, method, path, token string, r
 		request.Header.Set("Authorization", "Bearer "+NormalizeToken(token))
 	}
 
-	response, err := c.httpClient.Do(request)
+	var response *http.Response
+	attempts := 0
+	if method == http.MethodGet && reader == nil {
+		attempts = c.readRetries
+	}
+	for attempt := 0; ; attempt++ {
+		start := time.Now()
+		response, err = c.httpClient.Do(request.Clone(ctx))
+		if c.logger != nil {
+			status := 0
+			if response != nil {
+				status = response.StatusCode
+			}
+			c.logger.Log(ctx, "http_request", map[string]any{"method": method, "status": status, "attempt": attempt + 1, "duration_ms": time.Since(start).Milliseconds(), "transport_error": err != nil})
+		}
+		retry := err != nil || (response != nil && (response.StatusCode == 429 || response.StatusCode == 502 || response.StatusCode == 503 || response.StatusCode == 504))
+		if !retry || attempt >= attempts || ctx.Err() != nil {
+			break
+		}
+		if response != nil {
+			io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+			response.Body.Close()
+		}
+		timer := time.NewTimer(c.retryDelay * time.Duration(attempt+1))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("gochat sdk: request %s %s: %w", method, path, err)
 	}
