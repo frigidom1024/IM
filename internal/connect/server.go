@@ -266,7 +266,8 @@ func (c *wsConnection) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		c.server.conns.Delete(c.userID)
-		_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+		// Close may run from readPump while writePump is sending data.
+		_ = c.conn.WriteControl(websocket.CloseMessage, []byte{}, time.Now().Add(time.Second))
 		err = c.conn.Close()
 		close(c.send)
 
@@ -337,7 +338,8 @@ func (c *wsConnection) writePump() {
 		select {
 		case message, ok := <-c.send:
 			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				// Control writes are safe alongside writePump's single data writer.
+				c.conn.WriteControl(websocket.CloseMessage, []byte{}, time.Now().Add(time.Second))
 				return
 			}
 

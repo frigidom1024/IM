@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"strconv"
 
 	"gochat/internal/connect"
+	"gochat/internal/logic/service"
 	"gochat/internal/pkg/errors"
 	"gochat/internal/pkg/logger"
 
@@ -48,12 +50,28 @@ func (h *MsgReadHandler) Handle(ctx context.Context, userID string, msg connect.
 		return nil
 	}
 
-	if h.clearer != nil {
+	if msgModel.GroupID > 0 {
+		readerID, parseErr := strconv.ParseInt(userID, 10, 64)
+		if parseErr != nil {
+			return parseErr
+		}
+		if err := (service.GroupAdminService{}).MarkRead(msgModel.GroupID, readerID, messageID); err != nil {
+			SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsSendFailed, "group receipt permission denied"))
+			return err
+		}
+	} else if h.clearer != nil {
+		readerID, parseErr := strconv.ParseInt(userID, 10, 64)
+		if parseErr != nil || readerID != msgModel.ToID {
+			SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsSendFailed, "receipt permission denied"))
+			return nil
+		}
 		fromID := msgModel.FromID
 		if msgModel.GroupID > 0 {
 			fromID = 0
 		}
-		h.clearer.ClearUnread(userID, fromID, msgModel.GroupID)
+		if err := h.clearer.ClearUnread(userID, fromID, msgModel.GroupID); err != nil {
+			return err
+		}
 	}
 
 	ackData := map[string]any{"status": "success", "message_id": messageID}

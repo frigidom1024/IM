@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"gochat/internal/connect"
 	"gochat/internal/logic/model"
@@ -94,6 +95,18 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 				continue
 			}
 			unreadTargets = append(unreadTargets, model.UnreadTarget{UserID: member.UserID, GroupID: msgModel.GroupID})
+		}
+		canSend := false
+		for _, member := range groupMembers {
+			if member.UserID == senderID && (member.MutedUntil == nil || !member.MutedUntil.After(time.Now())) {
+				canSend = true
+				break
+			}
+		}
+		if !canSend {
+			err := errors.New(errors.CodeWsSendFailed, "group membership required or member muted")
+			SendError(h.connSvr, userID, msg.Seq(), err)
+			return err
 		}
 	}
 

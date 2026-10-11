@@ -1,227 +1,230 @@
 package handler
 
 import (
-	"net/http"
+	"errors"
 	"strconv"
+	"strings"
+	"time"
 
+	"gochat/internal/logic/model"
 	"gochat/internal/logic/registry"
 	"gochat/internal/logic/service"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const (
-	RoleOwner  = 1
-	RoleAdmin  = 2
-	RoleMember = 3
+	RoleOwner  = model.RoleOwner
+	RoleAdmin  = model.RoleAdmin
+	RoleMember = model.RoleMember
 )
 
-// GroupHandler 群组处理器
 type GroupHandler struct {
 	groupService *service.GroupService
+	admin        service.GroupAdminService
 }
 
-// NewGroupHandler 创建群组处理器
-func NewGroupHandler(
-	groupRepo registry.GroupRepository,
-	groupMemberRepo registry.GroupMemberRepository,
-) *GroupHandler {
-	return &GroupHandler{
-		groupService: service.NewGroupService(groupRepo, groupMemberRepo),
-	}
+func NewGroupHandler(g registry.GroupRepository, m registry.GroupMemberRepository) *GroupHandler {
+	return &GroupHandler{groupService: service.NewGroupService(g, m)}
 }
-
-// Create 创建群组
-func (h *GroupHandler) Create(c *gin.Context) {
-	userID := c.GetInt64("userID")
-	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
+func groupResult(c *gin.Context, data any, err error) {
+	if err == nil {
+		c.JSON(200, gin.H{"code": 0, "data": data})
 		return
 	}
-
+	status := 500
+	message := "group operation failed"
+	switch {
+	case errors.Is(err, service.ErrGroupForbidden):
+		status = 403
+		message = err.Error()
+	case errors.Is(err, service.ErrGroupInvalid):
+		status = 400
+		message = err.Error()
+	case errors.Is(err, service.ErrGroupFull):
+		status = 409
+		message = err.Error()
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		status = 404
+		message = "group or member not found"
+	}
+	c.JSON(status, gin.H{"code": status, "message": message})
+}
+func groupScope(c *gin.Context) (int64, int64, bool) {
+	user := c.GetInt64("userID")
+	if user <= 0 {
+		c.JSON(401, gin.H{"code": 401, "message": "authentication required"})
+		return 0, 0, false
+	}
+	id, err := strconv.ParseInt(c.Param("groupId"), 10, 64)
+	if err != nil || id <= 0 {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return 0, 0, false
+	}
+	return id, user, true
+}
+func groupPage(c *gin.Context) (int, int, bool) {
+	limit, offset, err := parseMessagePage(c)
+	if err != nil || offset > 1000000 {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return 0, 0, false
+	}
+	return limit, int(offset), true
+}
+func (h *GroupHandler) Create(c *gin.Context) {
+	user := c.GetInt64("userID")
+	if user <= 0 {
+		c.JSON(401, gin.H{"code": 401, "message": "authentication required"})
+		return
+	}
 	var req struct {
-		Name      string `json:"name"`
-		Avatar    string `json:"avatar"`
+		Name       string `json:"name"`
+		Avatar     string `json:"avatar"`
 		MaxMembers int    `json:"max_members"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.Name) == "" || req.MaxMembers < 0 || req.MaxMembers > 10000 {
+		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
-
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "群组名称不能为空"})
-		return
+	if req.MaxMembers == 0 {
+		req.MaxMembers = 200
 	}
-
-	maxMembers := req.MaxMembers
-	if maxMembers == 0 {
-		maxMembers = 200
-	}
-
-	group, err := h.groupService.Create(req.Name, req.Avatar, userID, maxMembers)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
-		return
-	}
-
-	// 创建者自动成为群主
-	h.groupService.AddMember(group.ID, userID, RoleOwner)
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "创建成功",
-		"data":    group,
-	})
+	group, err := h.admin.Create(req.Name, req.Avatar, user, req.MaxMembers)
+	groupResult(c, group, err)
 }
-
-// GetList 获取群组列表
 func (h *GroupHandler) GetList(c *gin.Context) {
-	userID := c.GetInt64("userID")
-	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
-		return
-	}
-
-	groups, err := h.groupService.GetByUser(userID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data":  groups,
-	})
+	groups, err := h.groupService.GetByUser(c.GetInt64("userID"))
+	groupResult(c, groups, err)
 }
-
-// GetMembers 获取群成员
 func (h *GroupHandler) GetMembers(c *gin.Context) {
-	groupIDStr := c.Param("groupId")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的群组ID"})
+	id, user, ok := groupScope(c)
+	if !ok {
 		return
 	}
-
-	members, err := h.groupService.GetMembers(groupID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
+	limit, offset, ok := groupPage(c)
+	if !ok {
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data":  members,
-	})
+	members, err := h.admin.Members(id, user, limit, offset)
+	groupResult(c, members, err)
 }
-
-// Join 加入群组
 func (h *GroupHandler) Join(c *gin.Context) {
-	userID := c.GetInt64("userID")
-	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
-		return
+	id, user, ok := groupScope(c)
+	if ok {
+		groupResult(c, nil, h.admin.Join(id, user))
 	}
-
-	groupIDStr := c.Param("groupId")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的群组ID"})
-		return
-	}
-
-	// 检查是否已经是成员
-	isMember, _ := h.groupService.IsMember(groupID, userID)
-	if isMember {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": "已经是群成员"})
-		return
-	}
-
-	err = h.groupService.AddMember(groupID, userID, RoleMember)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "加入成功",
-	})
 }
-
-// Leave 离开群组
 func (h *GroupHandler) Leave(c *gin.Context) {
-	userID := c.GetInt64("userID")
-	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
-		return
+	id, user, ok := groupScope(c)
+	if ok {
+		groupResult(c, nil, h.admin.Remove(id, user, user))
 	}
-
-	groupIDStr := c.Param("groupId")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的群组ID"})
-		return
-	}
-
-	err = h.groupService.RemoveMember(groupID, userID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "已离开群组",
-	})
 }
-
-// RemoveMember 移除群成员（群主操作）
 func (h *GroupHandler) RemoveMember(c *gin.Context) {
-	userID := c.GetInt64("userID")
-	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
+	id, user, ok := groupScope(c)
+	if !ok {
 		return
 	}
-
-	groupIDStr := c.Param("groupId")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的群组ID"})
+	target, err := strconv.ParseInt(c.Param("userId"), 10, 64)
+	if err != nil || target <= 0 {
+		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
-
-	targetIDStr := c.Param("userId")
-	targetID, err := strconv.ParseInt(targetIDStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的用户ID"})
+	groupResult(c, nil, h.admin.Remove(id, user, target))
+}
+func (h *GroupHandler) Search(c *gin.Context) {
+	limit, offset, ok := groupPage(c)
+	if !ok {
 		return
 	}
-
-	if targetID == userID {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请使用退出群组操作"})
+	groups, err := h.admin.Search(strings.TrimSpace(c.Query("q")), limit, offset)
+	groupResult(c, groups, err)
+}
+func (h *GroupHandler) Invite(c *gin.Context) {
+	id, user, ok := groupScope(c)
+	if !ok {
 		return
 	}
-
-	group, err := h.groupService.GetByID(groupID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": "群组不存在"})
+	var req struct {
+		UserID int64 `json:"user_id"`
+	}
+	if c.ShouldBindJSON(&req) != nil || req.UserID <= 0 {
+		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
-	if group.OwnerID != userID {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": "仅群主可移除成员"})
+	groupResult(c, nil, h.admin.Invite(id, user, req.UserID))
+}
+func (h *GroupHandler) Transfer(c *gin.Context) {
+	id, user, ok := groupScope(c)
+	if !ok {
 		return
 	}
-
-	err = h.groupService.RemoveMember(groupID, targetID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
+	var req struct {
+		UserID int64 `json:"user_id"`
+	}
+	if c.ShouldBindJSON(&req) != nil || req.UserID <= 0 {
+		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "已移除成员",
-	})
+	groupResult(c, nil, h.admin.Transfer(id, user, req.UserID))
+}
+func (h *GroupHandler) Announcement(c *gin.Context) {
+	id, user, ok := groupScope(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Announcement *string `json:"announcement"`
+	}
+	if c.ShouldBindJSON(&req) != nil || req.Announcement == nil {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return
+	}
+	groupResult(c, nil, h.admin.Announce(id, user, *req.Announcement))
+}
+func (h *GroupHandler) UpdateMember(c *gin.Context) {
+	id, user, ok := groupScope(c)
+	if !ok {
+		return
+	}
+	target, err := strconv.ParseInt(c.Param("userId"), 10, 64)
+	if err != nil || target <= 0 {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return
+	}
+	var req struct {
+		Nickname   *string    `json:"nickname"`
+		MutedUntil *time.Time `json:"muted_until"`
+		Role       *int8      `json:"role"`
+		Unmute     bool       `json:"unmute"`
+	}
+	if c.ShouldBindJSON(&req) != nil || (req.Nickname == nil && req.MutedUntil == nil && req.Role == nil && !req.Unmute) || (req.Unmute && req.MutedUntil != nil) {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return
+	}
+	groupResult(c, nil, h.admin.UpdateMember(id, user, target, req.Nickname, req.MutedUntil, req.Unmute || req.MutedUntil != nil, req.Role))
+}
+func (h *GroupHandler) Dissolve(c *gin.Context) {
+	id, user, ok := groupScope(c)
+	if ok {
+		groupResult(c, nil, h.admin.Dissolve(id, user))
+	}
+}
+func (h *GroupHandler) Receipts(c *gin.Context) {
+	id, user, ok := groupScope(c)
+	if !ok {
+		return
+	}
+	messageID, err := strconv.ParseInt(c.Param("messageId"), 10, 64)
+	if err != nil || messageID <= 0 {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return
+	}
+	limit, offset, ok := groupPage(c)
+	if !ok {
+		return
+	}
+	readers, err := h.admin.Receipts(id, user, messageID, limit, offset)
+	groupResult(c, readers, err)
 }
