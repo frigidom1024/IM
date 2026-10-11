@@ -11,17 +11,22 @@ import (
 
 // httpStatusMap 错误码 → HTTP 状态码映射
 var httpStatusMap = map[int]int{
-	CodeSuccess:        http.StatusOK,
-	CodeBadRequest:     http.StatusBadRequest,
-	CodeInvalidParam:   http.StatusBadRequest,
-	CodeUnauthorized:   http.StatusUnauthorized,
-	CodeServerError:    http.StatusInternalServerError,
-	CodeUploadTooLarge: http.StatusBadRequest,
-	CodeUploadBadMIME:  http.StatusBadRequest,
-	CodeUploadBadType:  http.StatusBadRequest,
-	CodeUploadMissType: http.StatusBadRequest,
-	CodeUploadReadFail: http.StatusInternalServerError,
-	CodeUploadFail:     http.StatusInternalServerError,
+	CodeSuccess:          http.StatusOK,
+	CodeForbidden:        http.StatusForbidden,
+	CodeNotFound:         http.StatusNotFound,
+	CodeMethodNotAllowed: http.StatusMethodNotAllowed,
+	CodeRateLimited:      http.StatusTooManyRequests,
+	CodeNotReady:         http.StatusServiceUnavailable,
+	CodeBadRequest:       http.StatusBadRequest,
+	CodeInvalidParam:     http.StatusBadRequest,
+	CodeUnauthorized:     http.StatusUnauthorized,
+	CodeServerError:      http.StatusInternalServerError,
+	CodeUploadTooLarge:   http.StatusBadRequest,
+	CodeUploadBadMIME:    http.StatusBadRequest,
+	CodeUploadBadType:    http.StatusBadRequest,
+	CodeUploadMissType:   http.StatusBadRequest,
+	CodeUploadReadFail:   http.StatusInternalServerError,
+	CodeUploadFail:       http.StatusInternalServerError,
 }
 
 // resolveHTTPStatus 根据错误码确定 HTTP 状态码
@@ -39,8 +44,9 @@ func resolveHTTPStatus(code int) int {
 // RespondOK 成功响应
 func RespondOK(c *gin.Context, data any) {
 	c.JSON(http.StatusOK, gin.H{
-		"code": CodeSuccess,
-		"data": data,
+		"code":    CodeSuccess,
+		"message": "ok",
+		"data":    data,
 	})
 }
 
@@ -65,6 +71,7 @@ func RespondError(c *gin.Context, err *Error) {
 	c.JSON(status, gin.H{
 		"code":    err.Code,
 		"message": err.Message,
+		"data":    nil,
 	})
 }
 

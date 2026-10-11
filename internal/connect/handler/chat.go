@@ -10,6 +10,7 @@ import (
 	"gochat/internal/pkg/errors"
 	"gochat/internal/pkg/logger"
 	"gochat/internal/pkg/snowflake"
+	"gochat/internal/pkg/telemetry"
 
 	"go.uber.org/zap"
 )
@@ -111,6 +112,7 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 	}
 
 	if err := h.msgSvc.SendWithUnread(msgModel, unreadTargets); err != nil {
+		telemetry.Default.MessagePersisted(false)
 		if msg.Seq() != "" {
 			if existing, lookupErr := h.msgSvc.GetByClientSeq(senderID, msg.Seq()); lookupErr == nil && existing != nil {
 				h.sendMsgAck(userID, msg.Seq(), existing.ID, true)
@@ -122,6 +124,7 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 		return err
 	}
 
+	telemetry.Default.MessagePersisted(true)
 	logger.Debug("消息处理成功", zap.String("userID", userID), zap.Int64("messageID", msgModel.ID))
 	h.sendMsgAck(userID, msg.Seq(), msgModel.ID, false)
 	if msgModel.ToID > 0 {

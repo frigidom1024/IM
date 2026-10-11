@@ -2,7 +2,9 @@ package connect
 
 import (
 	"context"
+	"encoding/json"
 	"gochat/internal/pkg/logger"
+	"gochat/internal/pkg/telemetry"
 	"gochat/internal/pkg/util"
 	"net"
 	"net/http"
@@ -30,6 +32,8 @@ type wsConnection struct {
 	send      chan []byte
 	server    *WsConnServer
 	closeOnce sync.Once
+	sendMu    sync.Mutex
+	closed    bool
 
 	// 速率限制
 	lastMsgTime time.Time
@@ -48,6 +52,8 @@ func (c *wsConnection) rateLimited() bool {
 
 // WsConnServer WebSocket连接服务器实现
 type WsConnServer struct {
+	metrics    *telemetry.Collector
+	connsMu    sync.Mutex
 	conns      sync.Map // string(userID) -> *wsConnection
 	registry   *HandlerRegistry
 	serverMu   sync.Mutex
@@ -55,9 +61,14 @@ type WsConnServer struct {
 }
 
 // NewWsConnServer 创建新的WebSocket服务器
-func NewWsConnServer() *WsConnServer {
+func NewWsConnServer(collectors ...*telemetry.Collector) *WsConnServer {
+	metrics := telemetry.Default
+	if len(collectors) > 0 && collectors[0] != nil {
+		metrics = collectors[0]
+	}
 	return &WsConnServer{
 		registry: NewHandlerRegistry(),
+		metrics:  metrics,
 	}
 }
 
@@ -74,23 +85,21 @@ func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	if token == "" {
 		logger.Warn("WebSocket连接失败: 缺少token")
-		http.Error(w, "Missing token", http.StatusUnauthorized)
+		s.metrics.Auth("ws", false)
+		writeAuthError(w, "missing token")
 		return
 	}
 
 	claims, err := util.ParseToken(token)
 	if err != nil {
 		logger.Warn("Token验证失败", zap.Error(err))
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		s.metrics.Auth("ws", false)
+		writeAuthError(w, "invalid token")
 		return
 	}
 
+	s.metrics.Auth("ws", true)
 	userID := strconv.Itoa(claims.UserID)
-
-	if existing, exists := s.conns.Load(userID); exists {
-		logger.Info("踢出旧连接", zap.String("userID", userID))
-		existing.(*wsConnection).Close()
-	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -105,7 +114,13 @@ func (s *WsConnServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		server: s,
 	}
 
+	s.connsMu.Lock()
+	if existing, exists := s.conns.Load(userID); exists {
+		existing.(*wsConnection).Close()
+	}
 	s.conns.Store(userID, wsConn)
+	s.metrics.Connected(userID)
+	s.connsMu.Unlock()
 	logger.Info("用户连接成功", zap.String("userID", userID))
 
 	ctx := context.Background()
@@ -139,12 +154,7 @@ func (s *WsConnServer) Send(userID string, msg Message) error {
 	}
 
 	wsConn := value.(*wsConnection)
-	select {
-	case wsConn.send <- data:
-		return nil
-	default:
-		return ErrSendQueueFull
-	}
+	return wsConn.enqueue(data)
 }
 
 // SendBatch 批量向多个用户发送消息
@@ -174,12 +184,7 @@ func (s *WsConnServer) SendRaw(userID string, data []byte) error {
 	}
 
 	wsConn := value.(*wsConnection)
-	select {
-	case wsConn.send <- data:
-		return nil
-	default:
-		return ErrSendQueueFull
-	}
+	return wsConn.enqueue(data)
 }
 
 // Disconnect 断开指定用户的连接
@@ -265,11 +270,14 @@ func (s *WsConnServer) SendOfflineNotify(userID string, notifyData *OfflineNotif
 func (c *wsConnection) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
-		c.server.conns.Delete(c.userID)
-		// Close may run from readPump while writePump is sending data.
+		c.server.conns.CompareAndDelete(c.userID, c)
+		c.server.metrics.Disconnected(c.userID)
+		c.sendMu.Lock()
+		c.closed = true
 		_ = c.conn.WriteControl(websocket.CloseMessage, []byte{}, time.Now().Add(time.Second))
 		err = c.conn.Close()
 		close(c.send)
+		c.sendMu.Unlock()
 
 		ctx := context.Background()
 		c.server.registry.HandleDisconnect(ctx, c.userID)
@@ -312,7 +320,7 @@ func (c *wsConnection) readPump() {
 		if err != nil {
 			logger.Warn("解析消息失败",
 				zap.String("userID", c.userID),
-				zap.String("raw", truncateString(string(message), 200)),
+
 				zap.Error(err))
 			continue
 		}
@@ -331,7 +339,7 @@ func (c *wsConnection) writePump() {
 	ticker := time.NewTicker(54 * time.Second)
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
+		_ = c.Close()
 	}()
 
 	for {
@@ -368,4 +376,23 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func writeAuthError(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]any{"code": 40100, "message": message, "data": nil})
+}
+func (c *wsConnection) enqueue(data []byte) error {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if c.closed {
+		return ErrUserNotOnline
+	}
+	select {
+	case c.send <- data:
+		return nil
+	default:
+		return ErrSendQueueFull
+	}
 }
