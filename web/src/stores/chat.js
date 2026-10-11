@@ -8,6 +8,7 @@ export const useChatStore = defineStore('chat', () => {
   const currentChat = ref(null) // { id, name, type }
   const messagesCache = ref({})  // { [userId: string]: Message[] }
   const unreadMap = ref({})      // { [userId: string]: count }
+  const readRequests = new Map()
 
   const currentMessages = computed(() => {
     if (!currentChat.value) return []
@@ -27,7 +28,12 @@ export const useChatStore = defineStore('chat', () => {
       const key = item.group_id > 0 ? 'g' + item.group_id : String(item.from_id)
       map[key] = item.count || item.unread_count || 0
     }
-    unreadMap.value = { ...unreadMap.value, ...map }
+    unreadMap.value = map
+    if (currentChat.value) markRead(currentChat.value.id, currentChat.value.type)
+  })
+
+  wsClient.on('open', () => {
+    if (currentChat.value) markRead(currentChat.value.id, currentChat.value.type)
   })
 
   // 实时消息
@@ -60,39 +66,49 @@ export const useChatStore = defineStore('chat', () => {
       messagesCache.value = { ...messagesCache.value, [cacheKey]: [...messagesCache.value[cacheKey], msgObj] }
     }
 
-    if (currentChat.value && chatKey === cacheKey) {
-      unreadMap.value[cacheKey] = 0
-    } else {
-      unreadMap.value[cacheKey] = (unreadMap.value[cacheKey] || 0) + 1
-    }
+    unreadMap.value[cacheKey] = (unreadMap.value[cacheKey] || 0) + 1
+    if (currentChat.value && chatKey === cacheKey) markRead(currentChat.value.id, currentChat.value.type)
   })
 
   // ====== 已读处理 ======
 
-  // markRead 发送已读回执
-  // 取最后一条对方发送的真实消息（非临时、非自己发送）
-  // 服务端根据此消息的 from_id 清除未读计数
-  function markRead(fromId, type = 'private') {
+  // The scope API does not depend on rounded history IDs or temporary WS IDs.
+  // Serialize each scope and repeat if a new message arrives during the request.
+  async function markRead(fromId, type = 'private') {
     const key = type === 'group' ? 'g' + fromId : String(fromId)
-    const msgs = messagesCache.value[key]
-    if (!msgs || msgs.length === 0) return
-    const realMsg = [...msgs].reverse().find(m => !m._temp && !m.isMine)
-    if (!realMsg) {
-      console.log('[markRead] no received msg found, skip')
-      return
+    const userStore = useUserStore()
+    const token = userStore.token
+    const userID = userStore.myId
+    const existing = readRequests.get(key)
+    if (existing && existing.token === token && existing.userID === userID) {
+      existing.again = true
+      return existing.promise
     }
-    console.log('[markRead] sending id:', realMsg.id)
-    wsClient.send({
-      cmd: 'msg_read',
-      seq: Date.now().toString(),
-      data: { message_id: realMsg.id }
-    })
+    const request = { token, userID, again: false, promise: null }
+    request.promise = (async () => {
+      try {
+        do {
+          request.again = false
+          if (userStore.token !== token || userStore.myId !== userID) return false
+          const result = await messageApi.markRead(type === 'group' ? { group_id: fromId } : { from_id: fromId })
+          if (result.code !== 0 || userStore.token !== token || userStore.myId !== userID) return false
+        } while (request.again)
+        unreadMap.value = { ...unreadMap.value, [key]: 0 }
+        return true
+      } catch {
+        // Keep the unread count on failure; open/reconnect/new messages retry.
+        return false
+      } finally {
+        if (readRequests.get(key) === request) readRequests.delete(key)
+      }
+    })()
+    readRequests.set(key, request)
+    return request.promise
   }
 
   async function openChat(id, name, type = 'private') {
     const key = type === 'group' ? 'g' + id : String(id)
     currentChat.value = { id, name, type }
-    unreadMap.value[key] = 0
 
     try {
       const res = type === 'group' ? await messageApi.getGroup(id) : await messageApi.getPrivate(id)
@@ -113,7 +129,8 @@ export const useChatStore = defineStore('chat', () => {
         }
         merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
         messagesCache.value = { ...messagesCache.value, [key]: merged }
-        markRead(id, type)
+        // A slow history response must not mark a conversation we have left.
+        if (currentChat.value?.id === id && currentChat.value?.type === type) await markRead(id, type)
       }
     } catch (e) {
       console.error('loadMessages:', e)
