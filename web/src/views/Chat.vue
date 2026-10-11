@@ -679,7 +679,7 @@ watch(messages, () => {
 .msg-voice { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 
 .composer { border-top: 1px solid var(--border); }
-.attachment-drafts { padding: 12px 20px 0; display: flex; flex-wrap: wrap; gap: 10px; max-height: 180px; overflow-y: auto; }
+.attachment-drafts { padding: 12px 20px 0; display: flex; flex-wrap: wrap; gap: 14px; max-height: 180px; overflow-y: auto; }
 .attachment-draft { position: relative; width: 64px; height: 64px; flex-shrink: 0; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); }
 .attachment-content { display: grid; place-items: center; width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit; overflow: hidden; background: none; color: var(--text-2); cursor: pointer; }
 .attachment-content:disabled { cursor: default; }
@@ -688,7 +688,7 @@ watch(messages, () => {
 .attachment-draft.uploading .attachment-content { opacity: .55; }
 .attachment-draft.error { border-color: var(--accent); }
 .attachment-draft.error .attachment-content { color: var(--accent); }
-.attachment-remove { position: absolute; top: 3px; right: 3px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); color: var(--text); cursor: pointer; }
+.attachment-remove { position: absolute; top: 0; right: 0; transform: translate(50%, -50%); z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); color: var(--text); cursor: pointer; }
 .attachment-remove svg { width: 12px; height: 12px; }
 .attachment-remove:hover { background: var(--bg-4); color: var(--accent); }
 .attachment-remove:focus-visible, .attachment-content:focus-visible, .upload-btn:focus-visible, .send-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -723,7 +723,7 @@ watch(messages, () => {
   .chat-header { padding: 12px 10px; gap: 8px; flex-wrap: wrap; }
   .chat-header-id { display: none; }
   .messages { padding: 16px 10px; }
-  .attachment-drafts { padding: 8px 8px 0; }
+  .attachment-drafts { padding: 12px 12px 0; }
   .chat-input { padding: 8px; gap: 6px; }
   .chat-input textarea { padding: 10px 8px; font-size: 16px; }
 }
