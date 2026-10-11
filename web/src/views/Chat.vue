@@ -127,19 +127,27 @@
           <div v-for="(msg, i) in messages" :key="i" :class="['msg', msg.isMine ? 'out' : 'in']">
             <div v-if="!msg.isMine" class="msg-sender">{{ msg.sender_name || '用户' + msg.from_id }}</div>
             <template v-if="msg.msg_type === 'image'">
-              <img class="msg-image" :src="getFileUrl(msg.content)" alt="图片" @click="previewImage(msg.content)">
+              <button v-if="getMediaUrl(msg.content, true)" class="media-button" aria-label="预览图片" @click="previewImage(msg.content)">
+                <img class="msg-image" :src="getMediaUrl(msg.content, true)" alt="图片">
+              </button>
+              <button v-else class="msg-file media-button" @click="loadMedia(msg.content, true)">{{ mediaError(msg.content, true) ? '图片加载失败，点击重试' : '加载图片' }}</button>
             </template>
             <template v-else-if="msg.msg_type === 'file'">
-              <div class="msg-file" @click="downloadFile(msg.content)">
+              <button class="msg-file media-button" @click="downloadFile(msg.content)">
                 <span class="file-icon">&#128196;</span>
                 <span class="file-name">{{ getFileName(msg.content) }}</span>
-              </div>
+              </button>
             </template>
             <template v-else-if="msg.msg_type === 'voice'">
-              <div class="msg-voice">
-                <span>&#128266;</span>
-                <span>{{ getVoiceDuration(msg.content) }}s</span>
-              </div>
+              <audio v-if="getMediaUrl(msg.content)" class="msg-audio" :src="getMediaUrl(msg.content)" controls preload="metadata"></audio>
+              <button v-else class="msg-voice media-button" @click="loadMedia(msg.content)">
+                <span aria-hidden="true">&#128266;</span>
+                <span>{{ getVoiceDuration(msg.content) }}s · 播放语音</span>
+              </button>
+            </template>
+            <template v-else-if="msg.msg_type === 'video'">
+              <video v-if="getMediaUrl(msg.content)" class="msg-video" :src="getMediaUrl(msg.content)" :poster="parseMedia(msg.content)?.thumbnail ? getMediaUrl(msg.content, true) || undefined : undefined" controls preload="metadata"></video>
+              <button v-else class="msg-file media-button" @click="loadMedia(msg.content)">查看视频 · {{ getFileName(msg.content) }}</button>
             </template>
             <template v-else>
               <div class="msg-content">{{ msg.content }}</div>
@@ -166,12 +174,13 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { useChatStore } from '../stores/chat'
 import { wsClient } from '../api/ws'
 import { uploadApi } from '../api/upload'
+import { createMediaCache } from '../api/media-cache'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -182,6 +191,11 @@ const fileInput = ref(null)
 const inputText = ref('')
 const addFriendId = ref('')
 const wsConnected = ref(false)
+const toastMsg = ref('')
+const mediaRevision = ref(0)
+const mediaErrors = ref({})
+const uploads = new Set()
+const mediaCache = createMediaCache({ onChange: () => { mediaRevision.value++ } })
 
 const tab = ref('friends')
 const showCreateGroup = ref(false)
@@ -250,6 +264,11 @@ async function handleFileSelect(e) {
   const file = e.target.files?.[0]
   if (!file || !currentChat.value) return
 
+  const targetChat = { ...currentChat.value }
+  const uploadToken = userStore.token
+  const controller = new AbortController()
+  uploads.add(controller)
+
   // 按 MIME 判断类型
   let fileType = 'file'
   if (file.type.startsWith('image/')) fileType = 'image'
@@ -257,11 +276,15 @@ async function handleFileSelect(e) {
   else if (file.type.startsWith('video/')) fileType = 'video'
 
   try {
-    const meta = await uploadApi.upload(file, fileType)
-    chatStore.sendMessage(meta, fileType)
+    const options = { signal: controller.signal, groupId: targetChat.type === 'group' ? targetChat.id : undefined }
+    const meta = await (file.size > 8 * 1024 * 1024
+      ? uploadApi.uploadResumable(file, fileType, options)
+      : uploadApi.upload(file, fileType, options))
+    if (uploadToken === userStore.token) chatStore.sendMessage(meta, fileType, targetChat)
   } catch (err) {
-    console.error('[upload] failed:', err)
-    alert('上传失败: ' + (err.message || ''))
+    if (!cancelled(err)) showToast('上传失败：' + (err.message || ''))
+  } finally {
+    uploads.delete(controller)
   }
   // 重置 input 允许重复选择同一文件
   e.target.value = ''
@@ -276,30 +299,108 @@ async function handleAddFriend() {
   } catch (e) { alert(e.message) }
 }
 
-function getFileUrl(raw) {
+function parseMedia(raw) {
+  if (raw && typeof raw === 'object') return raw
+  try { return JSON.parse(raw) } catch { return { url: raw } }
+}
+function mediaPath(raw, thumbnail = false) {
+  const meta = parseMedia(raw)
+  return (thumbnail ? meta?.thumbnail || meta?.url : meta?.url) || ''
+}
+function getMediaUrl(raw, thumbnail = false) {
+  mediaRevision.value // Refresh the template when cached object URLs change.
+  return mediaCache.get(mediaPath(raw, thumbnail))
+}
+function mediaError(raw, thumbnail = false) {
+  return mediaErrors.value[mediaPath(raw, thumbnail)]
+}
+function cancelled(error) {
+  return error.name === 'AbortError' || error.code === 'ERR_CANCELED'
+}
+async function fetchMedia(raw, thumbnail = false) {
+  const path = mediaPath(raw, thumbnail)
+  if (!path) throw new Error('消息缺少文件地址')
+  return mediaCache.load(path)
+}
+async function loadMedia(raw, thumbnail = false) {
+  const path = mediaPath(raw, thumbnail)
   try {
-    const meta = JSON.parse(raw)
-    return meta.thumbnail || meta.url
-  } catch { return raw }
+    await fetchMedia(raw, thumbnail)
+    const errors = { ...mediaErrors.value }
+    delete errors[path]
+    mediaErrors.value = errors
+  } catch (error) {
+    if (cancelled(error)) return
+    mediaErrors.value = { ...mediaErrors.value, [path]: error.message }
+    showToast('文件加载失败：' + error.message)
+  }
 }
-function getFileName(raw) {
-  try { return JSON.parse(raw).name || '文件' } catch { return '文件' }
-}
-function getVoiceDuration(raw) {
-  try { return JSON.parse(raw).duration || 0 } catch { return 0 }
-}
-function downloadFile(raw) {
+function getFileName(raw) { return parseMedia(raw)?.name || '文件' }
+function getVoiceDuration(raw) { return parseMedia(raw)?.duration || 0 }
+async function downloadFile(raw) {
   try {
-    const meta = JSON.parse(raw)
-    if (meta.url) window.open('/api/files/' + meta.url, '_blank')
-  } catch {}
+    const url = await fetchMedia(raw)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = getFileName(raw)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } catch (error) { if (!cancelled(error)) showToast('下载失败：' + error.message) }
 }
-function previewImage(raw) {
+async function previewImage(raw) {
+  // Open synchronously to retain the browser's user-gesture permission. Render
+  // only an img element; do not navigate a message-provided blob as a document.
+  const preview = window.open('about:blank', '_blank')
+  if (preview) preview.opener = null
   try {
-    const meta = JSON.parse(raw)
-    if (meta.url) window.open('/api/files/' + meta.url, '_blank')
-  } catch {}
+    const url = await fetchMedia(raw)
+    if (!preview || preview.closed) return
+    const image = preview.document.createElement('img')
+    image.src = url
+    image.alt = getFileName(raw)
+    image.style.maxWidth = '100%'
+    preview.document.title = getFileName(raw)
+    preview.document.body.replaceChildren(image)
+  } catch (error) {
+    preview?.close()
+    if (!cancelled(error)) showToast('图片加载失败：' + error.message)
+  }
 }
+
+function handleStorageChange(event) {
+  if (event.key === 'token' || event.key === null) {
+    mediaCache.clear()
+    mediaErrors.value = {}
+  }
+}
+onMounted(() => window.addEventListener('storage', handleStorageChange))
+let mediaToken = userStore.token
+watch([() => userStore.token, () => messages.value.map(msg => [msg.msg_type, msg.content])], ([token]) => {
+  if (token !== mediaToken) {
+    mediaCache.clear()
+    for (const controller of uploads) controller.abort()
+    mediaErrors.value = {}
+    mediaToken = token
+  }
+  const visible = messages.value.filter(msg => ['image', 'voice', 'video', 'file'].includes(msg.msg_type))
+  mediaCache.retain(visible.flatMap(msg => [mediaPath(msg.content), mediaPath(msg.content, true)]).filter(Boolean))
+  if (!token) return
+  // Only image previews are eager. Large voice/video bodies load on demand.
+  for (const msg of visible) if (msg.msg_type === 'image' || (msg.msg_type === 'video' && parseMedia(msg.content)?.thumbnail)) {
+    const path = mediaPath(msg.content, true)
+    if (path && !mediaErrors.value[path]) fetchMedia(msg.content, true).catch(error => {
+      if (!cancelled(error)) mediaErrors.value = { ...mediaErrors.value, [path]: error.message }
+    })
+  }
+}, { immediate: true, flush: 'sync' })
+
+onBeforeUnmount(() => {
+  mediaCache.clear()
+  for (const controller of uploads) controller.abort()
+  window.removeEventListener('storage', handleStorageChange)
+  clearTimeout(toastTimer)
+})
 
 function handleOpenGroup(g) {
   chatStore.openChat(g.id, g.name, 'group')
@@ -551,6 +652,10 @@ watch(messages, () => {
 .msg-file { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 2px 0; }
 .msg-file .file-icon { font-size: 24px; }
 .msg-file .file-name { font-size: 13px; word-break: break-all; }
+.media-button { background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 0; }
+.media-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.msg-video { display: block; max-width: 240px; max-height: 240px; border-radius: 8px; }
+.msg-audio { display: block; max-width: 240px; }
 .msg-voice { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 
 .chat-input { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-end; }
