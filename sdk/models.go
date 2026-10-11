@@ -63,13 +63,14 @@ type AddFriendRequest struct {
 
 // Group represents a group conversation.
 type Group struct {
-	ID         int64     `json:"id"`
-	Name       string    `json:"name"`
-	Avatar     string    `json:"avatar"`
-	OwnerID    int64     `json:"owner_id"`
-	MaxMembers int       `json:"max_members"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	Announcement string    `json:"announcement"`
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	Avatar       string    `json:"avatar"`
+	OwnerID      int64     `json:"owner_id"`
+	MaxMembers   int       `json:"max_members"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // CreateGroupRequest creates a group.
@@ -81,11 +82,15 @@ type CreateGroupRequest struct {
 
 // GroupMember represents membership in a group.
 type GroupMember struct {
-	ID       int64     `json:"id"`
-	GroupID  int64     `json:"group_id"`
-	UserID   int64     `json:"user_id"`
-	Role     int8      `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
+	Nickname          string     `json:"nickname"`
+	MutedUntil        *time.Time `json:"muted_until,omitempty"`
+	LastReadMessageID int64      `json:"last_read_message_id,string"`
+	ReadAt            *time.Time `json:"read_at,omitempty"`
+	ID                int64      `json:"id"`
+	GroupID           int64      `json:"group_id"`
+	UserID            int64      `json:"user_id"`
+	Role              int8       `json:"role"`
+	JoinedAt          time.Time  `json:"joined_at"`
 }
 
 // Message is a message returned by the history API.

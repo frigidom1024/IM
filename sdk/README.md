@@ -226,3 +226,59 @@ example token resolver with your own authentication implementation.
 Run `go test -v ./...` there against a running Docker stack using the environment
 variables described in its README. Without a server URL the live test explicitly
 skips; this does not count as verifying the Docker server.
+
+
+## P1 conversations and groups
+
+`ListConversations(ctx, limit, offset)` includes names, avatars, unread counts,
+last messages and viewer preferences. `UpdateConversation` takes the stable
+`private:<user_id>` or `group:<group_id>` scope and a `ConversationPatch` with
+pointer fields so false and empty draft values are distinct from omission.
+Message IDs accept both legacy JSON numbers and lossless JSON strings.
+
+Group management methods: `SearchGroups`, `InviteGroupMember`,
+`TransferGroupOwner`, `UpdateGroupAnnouncement`, `UpdateGroupMember`,
+`DissolveGroup`, `ListGroupMembersPage`, and `ListGroupReadReceipts`.
+`GroupMemberPatch` uses optional nickname, role and muted-until fields;
+set `Unmute: true` to clear the mute. Server authorization remains authoritative.
+`ListGroupFiles(ctx, groupID, limit, offset)` lists group assets.
+
+## Resumable uploads and private downloads
+
+```go
+meta, err := user.UploadFile(ctx, sdk.UploadFileRequest{
+    File: file, Name: "video.mp4", Type: "video", MIME: "video/mp4", Size: size,
+    Progress: func(acknowledged, total int64) { /* persisted progress */ },
+})
+var uploadErr *sdk.UploadSessionError
+if errors.As(err, &uploadErr) {
+    // Persist uploadErr.SessionID and supply it on a later UploadFile call.
+    // Use the identical seekable file and Size when resuming.
+}
+```
+
+A new upload creates a session; a request with `SessionID` retrieves its persisted
+offset. The input must be a seekable file with the declared size. Chunks are at
+most 8 MiB and use bounded memory. Failed chunks are never replayed automatically,
+including ambiguous errors where the server might have stored part of a chunk.
+Progress reports the initial persisted offset and each acknowledged offset,
+synchronously. New sessions can declare `GroupID` and `ExpiresHours`.
+A returned `UploadSessionError` wraps the original `APIError` or transport error
+and preserves the session ID for resumption.
+
+For manual control use `CreateUploadSession`, `GetUploadSession`,
+`AppendUploadChunk`, `CompleteUploadSession` and `AbortUploadSession`.
+
+```go
+response, err := user.DownloadFile(ctx, fileID)
+if err != nil { return err }
+defer response.Body.Close()
+_, err = io.Copy(destination, response.Body)
+```
+
+`DownloadThumbnail` has the same streaming response interface. These methods
+send authentication, preserve response headers and convert JSON HTTP errors
+into `APIError`; successful binary responses are never decoded as JSON.
+The caller closes the response body. Downloads are single requests and do not
+retry a partially consumed body. File IDs are the segment in the returned
+`/api/file/<file_id>/download` URL.

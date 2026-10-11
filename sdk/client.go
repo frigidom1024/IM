@@ -342,9 +342,15 @@ func (c *Client) doWithToken(ctx context.Context, method, path, token string, pa
 }
 
 func (c *Client) doWithReader(ctx context.Context, method, path, token string, reader io.Reader, contentType string, output any) error {
+	return c.doWithReaderHeaders(ctx, method, path, token, reader, contentType, nil, output)
+}
+func (c *Client) doWithReaderHeaders(ctx context.Context, method, path, token string, reader io.Reader, contentType string, headers http.Header, output any) error {
 	request, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
 		return fmt.Errorf("gochat sdk: create request: %w", err)
+	}
+	for key, values := range headers {
+		request.Header[key] = append([]string(nil), values...)
 	}
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
