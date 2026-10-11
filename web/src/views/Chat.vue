@@ -688,7 +688,7 @@ watch(messages, () => {
 .attachment-draft.uploading .attachment-content { opacity: .55; }
 .attachment-draft.error { border-color: var(--accent); }
 .attachment-draft.error .attachment-content { color: var(--accent); }
-.attachment-remove { position: absolute; top: 0; right: 0; transform: translate(50%, -50%); z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); color: var(--text); cursor: pointer; }
+.attachment-remove { position: absolute; top: 0; right: 0; transform: translate(50%, -50%); z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-2); color: var(--text); cursor: pointer; }
 .attachment-remove svg { width: 12px; height: 12px; }
 .attachment-remove:hover { background: var(--bg-4); color: var(--accent); }
 .attachment-remove:focus-visible, .attachment-content:focus-visible, .upload-btn:focus-visible, .send-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
