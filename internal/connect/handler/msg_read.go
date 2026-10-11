@@ -74,7 +74,7 @@ func (h *MsgReadHandler) Handle(ctx context.Context, userID string, msg connect.
 		}
 	}
 
-	ackData := map[string]any{"status": "success", "message_id": messageID}
+	ackData := map[string]any{"status": "success", "message_id": messageID, "message_id_string": strconv.FormatInt(messageID, 10)}
 	ackMsg := connect.NewRawMessage(connect.CmdMsgReadReply, msg.Seq(), ackData)
 	h.connSvr.Send(userID, ackMsg)
 

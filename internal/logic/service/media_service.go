@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -200,14 +201,23 @@ func (s *MediaService) Complete(ctx context.Context, id string, userID int64) (*
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		// Preserve a confirmed commit if its acknowledgement was lost.
-		var count int64
-		checkErr := mysql.Client.WithContext(cleanup).Model(&model.MediaAsset{}).Where("id=?", asset.ID).Count(&count).Error
-		if checkErr == nil && count == 0 {
-			s.Store.Delete(cleanup, asset.ObjectPath)
-			if asset.ThumbnailPath != "" {
-				s.Store.Delete(cleanup, asset.ThumbnailPath)
+		_ = mysql.Client.WithContext(cleanup).Transaction(func(tx *gorm.DB) error {
+			var session model.UploadSession
+			if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&session, "id=?", id).Error; lockErr != nil {
+				return lockErr
 			}
-		}
+			var count int64
+			if checkErr := tx.Model(&model.MediaAsset{}).Where("id=?", asset.ID).Count(&count).Error; checkErr != nil || count != 0 {
+				return checkErr
+			}
+			if deleteErr := s.Store.Delete(cleanup, asset.ObjectPath); deleteErr != nil {
+				return deleteErr
+			}
+			if asset.ThumbnailPath != "" {
+				return s.Store.Delete(cleanup, asset.ThumbnailPath)
+			}
+			return nil
+		})
 	}
 	if err == nil {
 		var session model.UploadSession
@@ -303,7 +313,29 @@ func (s *MediaService) Cleanup(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	// Recover orphaned objects after an ambiguous database outage or a crash
+	// between object upload and COMMIT. Recent objects cannot be removed here.
+	deleted := 0
+	return s.Store.VisitStaleManagedObjects(ctx, time.Now().Add(-24*time.Hour), func(objectPath string) (bool, error) {
+		id := strings.TrimSuffix(filepath.Base(objectPath), ".jpg")
+		if len(id) != 32 {
+			return true, nil
+		}
+		if _, err := hex.DecodeString(id); err != nil {
+			return true, nil
+		}
+		var count int64
+		if err := mysql.Client.WithContext(ctx).Model(&model.MediaAsset{}).Where("id=?", id).Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count == 0 {
+			if err := s.Store.Delete(ctx, objectPath); err != nil {
+				return false, err
+			}
+			deleted++
+		}
+		return deleted < 100, nil
+	})
 }
 
 func MediaContent(asset *model.MediaAsset) string {

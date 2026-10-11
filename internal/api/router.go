@@ -50,6 +50,7 @@ func NewRouter(
 	engine.HandleMethodNotAllowed = true
 	engine.Use(middleware.Envelopes(), middleware.Metrics(), middleware.Recovery())
 	engine.Use(middleware.CORS(allowedOrigins))
+	registerOpenAPI(engine)
 	engine.NoRoute(func(c *gin.Context) { errors.RespondError(c, errors.New(errors.CodeNotFound, "route not found")) })
 	engine.NoMethod(func(c *gin.Context) {
 		errors.RespondError(c, errors.New(errors.CodeMethodNotAllowed, "method not allowed"))

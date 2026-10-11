@@ -113,6 +113,10 @@ GitHub Actions 会自动执行：
 - [后端 Go SDK](sdk/README.md)
 <<<<<<< Updated upstream
 - [P0 运维与生命周期](docs/p0-operations.md)
+- [P1 功能、升级与媒体维护](docs/p1-operations.md)
+- [P1 验证记录](docs/p1-validation.md)
+- [HTTP OpenAPI 契约](docs/api/README.md)
+- [健康检查与 Prometheus 指标](docs/operations/runtime.md)
 =======
 >>>>>>> Stashed changes
 

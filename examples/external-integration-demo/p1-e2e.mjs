@@ -93,6 +93,28 @@ async function main() {
     assert((await download(movie.url,alice.token)).length>0,'transcoded video empty');
     console.log('✓ PNG 缩略图、音频时长、真实 ffmpeg 视频转码及鉴权下载通过');
 
+    // Use the isolated Docker database to advance expiry, then execute the
+    // production maintenance binary against actual S3 HTTP object storage.
+    const assetID=file.url.split('/')[3];
+    assert(/^[a-f0-9]{32}$/.test(assetID),'invalid asset fixture ID');
+    execFileSync('docker',['exec','-e','MYSQL_PWD=root','gochat-integration-mysql','mysql','-uroot','gochat','-e',`UPDATE media_asset SET expires_at=DATE_SUB(NOW(),INTERVAL 1 HOUR) WHERE id='${assetID}'; UPDATE upload_session SET expires_at=DATE_SUB(NOW(),INTERVAL 1 HOUR) WHERE id='${session.id}';`],{stdio:'pipe',timeout:30000});
+    await download(file.url,alice.token,410);
+    const storageURL=process.env.GOCHAT_S3_URL || 'http://localhost:19000';
+    const fixtureIDs=Array.from({length:101},(_,index)=>index.toString(16).padStart(32,'0'));
+    const orphanID='ffffffffffffffffffffffffffffffff';
+    await Promise.all([...fixtureIDs,orphanID].map(async id=>{
+      const response=await fetch(`${storageURL}/gochat/attachments/${id}`,{method:'PUT',headers:{'Content-Type':'text/plain','X-GoChat-Test-Modified':'2010-01-01T00:00:00Z'},body:'fixture'});
+      assert(response.ok,'stale object fixture failed');
+    }));
+    const values=fixtureIDs.map(id=>`('${id}',${alice.user.id},'attachments/${id}','fixture','text/plain',7,NOW())`).join(',');
+    execFileSync('docker',['exec','-e','MYSQL_PWD=root','gochat-integration-mysql','mysql','-uroot','gochat','-e',`INSERT IGNORE INTO media_asset(id,user_id,object_path,name,mime,size,created_at) VALUES ${values};`],{stdio:'pipe',timeout:30000});
+    execFileSync('docker',['exec',container,'./im-maintenance'],{stdio:'pipe',timeout:30000});
+    await download(file.url,alice.token,404);
+    await expectStatus(path,alice.token,404);
+    assert((await fetch(`${storageURL}/gochat/attachments/${orphanID}`)).status===404,'orphan after 101 permanent assets was skipped');
+    assert((await fetch(`${storageURL}/gochat/attachments/${fixtureIDs[0]}`)).ok,'permanent asset deleted by maintenance');
+    console.log('✓ 过期资产拒绝下载，维护命令清除数据库、临时文件和对象');
+
     const metrics=await (await fetch(API_URL+'/metrics')).text();
     assert(metrics.includes('gochat_http_requests_total') && metrics.includes('gochat_messages_total'),'Prometheus metrics missing');
     await expectStatus('/api/unknown',alice.token,404);

@@ -91,6 +91,10 @@ func New(cfg *config.Config) (*Application, error) {
 	if cfg.Redis.Enabled {
 		app.redisClient = redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port), Password: cfg.Redis.Password, DB: cfg.Redis.DB, DialTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second, ContextTimeoutEnabled: true})
 		checks["redis"] = func(ctx context.Context) error { return app.redisClient.Ping(ctx).Err() }
+		telemetry.Default.SetRedisStats(func() telemetry.RedisStats {
+			stats := app.redisClient.PoolStats()
+			return telemetry.RedisStats{Total: stats.TotalConns, Idle: stats.IdleConns, Hits: stats.Hits, Misses: stats.Misses, Timeouts: stats.Timeouts}
+		})
 	}
 	if cfg.Etcd.Enabled {
 		app.etcdClient, err = clientv3.New(clientv3.Config{Endpoints: cfg.Etcd.Endpoints, DialTimeout: 2 * time.Second})

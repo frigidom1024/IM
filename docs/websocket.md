@@ -143,12 +143,14 @@ WebSocket 端点: `/ws?token={jwt}`
 {
   "cmd": "msg_reply",
   "seq": "1749218312345",
-  "data": { "status": "success", "message_id": "321622086873387008", "duplicate": false }
+  "data": { "status": "success", "message_id": 321622086873387008, "message_id_string": "321622086873387008", "duplicate": false }
 }
 ```
 
 > **注意**
 `seq` 值与发送请求的 `seq` 一致，用于客户端匹配确认和重试。重复请求会返回同一个 `message_id`，并将 `duplicate` 设置为 `true`。
+
+`message_id` 保留数字形式兼容已有客户端；JavaScript 应使用 `message_id_string` 精确传递 Snowflake ID，避免 Number 精度丢失。
 
 ---
 

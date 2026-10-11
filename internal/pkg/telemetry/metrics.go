@@ -32,6 +32,18 @@ type Collector struct {
 	users          map[string]int
 	messages       map[string]uint64
 	dbStats        func() sql.DBStats
+	redisStats     func() RedisStats
+}
+
+type RedisStats struct {
+	Total, Idle            uint32
+	Hits, Misses, Timeouts uint32
+}
+
+func (c *Collector) SetRedisStats(provider func() RedisStats) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.redisStats = provider
 }
 
 func New() *Collector {
@@ -146,6 +158,11 @@ func (c *Collector) Write(w io.Writer) {
 	fmt.Fprintln(w, "# HELP gochat_messages_total Message persistence outcomes.\n# TYPE gochat_messages_total counter")
 	for _, result := range []string{"persisted", "persistence_failure"} {
 		fmt.Fprintf(w, "gochat_messages_total{result=%q} %d\n", result, c.messages[result])
+	}
+	if c.redisStats != nil {
+		s := c.redisStats()
+		fmt.Fprintf(w, "# HELP gochat_redis_connections Redis pool connections.\n# TYPE gochat_redis_connections gauge\ngochat_redis_connections{state=\"total\"} %d\ngochat_redis_connections{state=\"idle\"} %d\n", s.Total, s.Idle)
+		fmt.Fprintf(w, "# HELP gochat_redis_pool_total Redis connection pool outcomes.\n# TYPE gochat_redis_pool_total counter\ngochat_redis_pool_total{result=\"hit\"} %d\ngochat_redis_pool_total{result=\"miss\"} %d\ngochat_redis_pool_total{result=\"timeout\"} %d\n", s.Hits, s.Misses, s.Timeouts)
 	}
 	if c.dbStats != nil {
 		s := c.dbStats()

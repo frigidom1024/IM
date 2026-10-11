@@ -32,6 +32,8 @@ Use the API address configured in `server.api_addr`. Metrics are process-local a
 | `gochat_messages_total` | `persisted` and `persistence_failure` outcomes of message+unread transactions |
 | `gochat_db_connections_open`, `_in_use`, `_idle`, `_max_open` | Database pool gauges |
 | `gochat_db_wait_total`, `gochat_db_wait_duration_seconds_total` | Database pool wait counters |
+| `gochat_redis_connections` | Enabled Redis pool total/idle connection gauges |
+| `gochat_redis_pool_total` | Enabled Redis pool hit/miss/timeout counters |
 
 Request paths use route templates such as `/api/user/info/:id`. Unmatched routes share `unmatched`; unsupported methods share `OTHER`. User IDs, filenames, message content, URLs, query strings and tokens never become metric labels. HTTP access logs contain the method, route template, status and duration. Panic logs exclude request headers, query strings, bodies and panic values. WebSocket malformed-message logs exclude raw message content.
 
