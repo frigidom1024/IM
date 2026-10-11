@@ -4,8 +4,10 @@ import (
 	"gochat/internal/logic/model"
 	"gochat/internal/logic/registry"
 	"gochat/internal/pkg/mysql"
+	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // MessageService 消息服务
@@ -33,6 +35,27 @@ func (s *MessageService) Send(msg *model.Message) error {
 // SendWithUnread persists a message and all affected unread summaries atomically.
 func (s *MessageService) SendWithUnread(msg *model.Message, targets []model.UnreadTarget) error {
 	return mysql.Client.Transaction(func(tx *gorm.DB) error {
+		if msg.GroupID > 0 {
+			var group model.Group
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, msg.GroupID).Error; err != nil {
+				return err
+			}
+			var sender model.GroupMember
+			if err := tx.Where("group_id = ? AND user_id = ?", msg.GroupID, msg.FromID).First(&sender).Error; err != nil {
+				return ErrGroupForbidden
+			}
+			if sender.MutedUntil != nil && sender.MutedUntil.After(time.Now()) {
+				return ErrGroupForbidden
+			}
+			var members []model.GroupMember
+			if err := tx.Where("group_id = ? AND user_id <> ?", msg.GroupID, msg.FromID).Find(&members).Error; err != nil {
+				return err
+			}
+			targets = make([]model.UnreadTarget, 0, len(members))
+			for _, member := range members {
+				targets = append(targets, model.UnreadTarget{UserID: member.UserID, GroupID: msg.GroupID})
+			}
+		}
 		if err := s.messageRepo.CreateWithTx(tx, msg); err != nil {
 			return err
 		}

@@ -126,6 +126,10 @@ func (h *MessageHandler) GetGroupMessages(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "无效的群组ID"})
 		return
 	}
+	if _, err := (service.GroupAdminService{}).Member(groupID, userID); err != nil {
+		groupResult(c, nil, err)
+		return
+	}
 
 	limit, offset, pageErr := parseMessagePage(c)
 	if pageErr != nil {
@@ -153,14 +157,23 @@ func (h *MessageHandler) MarkRead(c *gin.Context) {
 	}
 
 	var req struct {
-		FromID  int64 `json:"from_id"`
-		GroupID int64 `json:"group_id"`
+		FromID    int64 `json:"from_id"`
+		GroupID   int64 `json:"group_id"`
+		MessageID int64 `json:"message_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
 		return
 	}
 
+	if req.GroupID > 0 {
+		groupResult(c, nil, (service.GroupAdminService{}).MarkRead(req.GroupID, userID, req.MessageID))
+		return
+	}
+	if req.GroupID < 0 || req.FromID <= 0 || req.MessageID < 0 {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return
+	}
 	if err := h.messageService.ClearUnread(userID, req.FromID, req.GroupID); err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "message": err.Error()})
 		return
