@@ -158,17 +158,12 @@
 
         <div class="composer">
           <div v-if="pendingAttachments.length" class="attachment-drafts" aria-label="待发送附件">
-            <div v-for="item in pendingAttachments" :key="item.id" class="attachment-draft">
-              <img v-if="item.preview" :src="item.preview" class="attachment-preview" alt="待发送图片">
-              <svg v-else class="attachment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H5v20h14V7zM14 2v5h5M8 12h8M8 16h6" /></svg>
-              <div class="attachment-info">
-                <span class="attachment-name" :title="item.file.name">{{ item.file.name }}</span>
-                <span :class="['attachment-status', { error: item.status === 'error' }]" role="status">
-                  {{ formatFileSize(item.file.size) }} · {{ item.status === 'ready' ? '待发送' : item.status === 'processing' ? '处理中…' : item.status === 'error' ? item.error : '上传中 ' + item.progress + '%' }}
-                </span>
-              </div>
-              <button v-if="item.status === 'error'" class="attachment-retry" @click="attachmentDrafts.retry(chatScope, item.id)">重试</button>
-              <button class="attachment-remove" :aria-label="'移除附件 ' + item.file.name" @click="attachmentDrafts.remove(chatScope, item.id)">
+            <div v-for="item in pendingAttachments" :key="item.id" :class="['attachment-draft', { error: item.status === 'error', uploading: item.status === 'uploading' || item.status === 'processing' }]" :title="attachmentHint(item)">
+              <button class="attachment-content" :disabled="item.status !== 'error'" :aria-label="attachmentHint(item)" @click="attachmentDrafts.retry(chatScope, item.id)">
+                <img v-if="item.preview" :src="item.preview" class="attachment-preview" :alt="item.file.name">
+                <svg v-else class="attachment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H5v20h14V7zM14 2v5h5M8 12h8M8 16h6" /></svg>
+              </button>
+              <button class="attachment-remove" :title="'移除附件 ' + item.file.name" :aria-label="'移除附件 ' + item.file.name" @click="attachmentDrafts.remove(chatScope, item.id)">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
               </button>
             </div>
@@ -249,6 +244,11 @@ function formatFileSize(size) {
   if (size < 1024) return size + ' B'
   if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'
   return (size / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+function attachmentHint(item) {
+  const status = item.status === 'ready' ? '待发送' : item.status === 'processing' ? '处理中' : item.status === 'error' ? item.error + '，点击图标重试' : '上传中 ' + item.progress + '%'
+  return item.file.name + ' · ' + formatFileSize(item.file.size) + ' · ' + status
 }
 
 onMounted(() => {
@@ -679,20 +679,19 @@ watch(messages, () => {
 .msg-voice { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 
 .composer { border-top: 1px solid var(--border); }
-.attachment-drafts { padding: 12px 20px 0; display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
-.attachment-draft { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); }
-.attachment-preview { width: 40px; height: 40px; object-fit: cover; border-radius: var(--radius); flex-shrink: 0; }
-.attachment-icon { width: 28px; height: 32px; margin: 4px 6px; color: var(--text-2); flex-shrink: 0; }
-.attachment-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.attachment-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attachment-status { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
-.attachment-status.error { color: var(--accent); }
-.attachment-remove, .attachment-retry { border: 0; background: none; color: var(--text-2); cursor: pointer; flex-shrink: 0; }
-.attachment-remove { display: grid; place-items: center; width: 32px; height: 32px; }
-.attachment-remove svg { width: 16px; height: 16px; }
-.attachment-retry { padding: 6px; font-size: 12px; color: var(--accent); }
-.attachment-remove:hover { background: var(--bg-4); color: var(--text); }
-.attachment-remove:focus-visible, .attachment-retry:focus-visible, .upload-btn:focus-visible, .send-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.attachment-drafts { padding: 12px 20px 0; display: flex; flex-wrap: wrap; gap: 10px; max-height: 180px; overflow-y: auto; }
+.attachment-draft { position: relative; width: 64px; height: 64px; flex-shrink: 0; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); }
+.attachment-content { display: grid; place-items: center; width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit; overflow: hidden; background: none; color: var(--text-2); cursor: pointer; }
+.attachment-content:disabled { cursor: default; }
+.attachment-preview { width: 100%; height: 100%; object-fit: cover; }
+.attachment-icon { width: 28px; height: 32px; }
+.attachment-draft.uploading .attachment-content { opacity: .55; }
+.attachment-draft.error { border-color: var(--accent); }
+.attachment-draft.error .attachment-content { color: var(--accent); }
+.attachment-remove { position: absolute; top: 3px; right: 3px; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); color: var(--text); cursor: pointer; }
+.attachment-remove svg { width: 12px; height: 12px; }
+.attachment-remove:hover { background: var(--bg-4); color: var(--accent); }
+.attachment-remove:focus-visible, .attachment-content:focus-visible, .upload-btn:focus-visible, .send-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chat-input { padding: 12px 20px; display: flex; gap: 8px; align-items: flex-end; }
 .chat-area { min-width: 0; }
 
@@ -726,8 +725,6 @@ watch(messages, () => {
   .messages { padding: 16px 10px; }
   .attachment-drafts { padding: 8px 8px 0; }
   .chat-input { padding: 8px; gap: 6px; }
-  .attachment-preview, .attachment-icon { width: 28px; height: 28px; margin: 0; }
-  .attachment-draft { gap: 6px; padding: 6px; }
   .chat-input textarea { padding: 10px 8px; font-size: 16px; }
 }
 </style>
