@@ -42,7 +42,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const senderName = userStore.friendMap[data.from_id]?.nickname || userStore.friendMap[data.from_id]?.username || ''
     const msgObj = {
-      id: Date.now(),
+      id: crypto.randomUUID(),
       from_id: data.from_id,
       to_id: data.to_id,
       group_id: data.group_id,
@@ -129,7 +129,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 构建消息对象
     const msgObj = {
-      id: Date.now(),
+      id: crypto.randomUUID(),
       from_id: userStore.myId,
       to_id: chat.id,
       content: msgType === 'text' ? content : JSON.stringify(content),

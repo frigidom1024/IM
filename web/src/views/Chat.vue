@@ -156,17 +156,35 @@
           </div>
         </div>
 
-        <div class="chat-input">
-          <input ref="fileInput" type="file" hidden @change="handleFileSelect" accept="image/*,.pdf,.zip,.doc,.docx,.mp3,.wav,.mp4">
-          <button class="upload-btn" @click="$refs.fileInput.click()" title="发送文件">&#128206;</button>
-          <textarea
-            v-model="inputText"
-            placeholder="输入消息..."
-            rows="1"
-            @keydown.enter.exact.prevent="send"
-            @input="autoGrow"
-          ></textarea>
-          <button class="send-btn" @click="send">&#8593;</button>
+        <div class="composer">
+          <div v-if="pendingAttachments.length" class="attachment-drafts" aria-label="待发送附件">
+            <div v-for="item in pendingAttachments" :key="item.id" class="attachment-draft">
+              <img v-if="item.preview" :src="item.preview" class="attachment-preview" alt="待发送图片">
+              <svg v-else class="attachment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H5v20h14V7zM14 2v5h5M8 12h8M8 16h6" /></svg>
+              <div class="attachment-info">
+                <span class="attachment-name" :title="item.file.name">{{ item.file.name }}</span>
+                <span :class="['attachment-status', { error: item.status === 'error' }]" role="status">
+                  {{ formatFileSize(item.file.size) }} · {{ item.status === 'ready' ? '待发送' : item.status === 'processing' ? '处理中…' : item.status === 'error' ? item.error : '上传中 ' + item.progress + '%' }}
+                </span>
+              </div>
+              <button v-if="item.status === 'error'" class="attachment-retry" @click="attachmentDrafts.retry(chatScope, item.id)">重试</button>
+              <button class="attachment-remove" :aria-label="'移除附件 ' + item.file.name" @click="attachmentDrafts.remove(chatScope, item.id)">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+              </button>
+            </div>
+          </div>
+          <div class="chat-input">
+            <input ref="fileInput" type="file" hidden multiple @change="handleFileSelect" accept="image/*,.pdf,.zip,.doc,.docx,.mp3,.wav,.mp4">
+            <button class="upload-btn" @click="$refs.fileInput.click()" title="添加附件" aria-label="添加附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8a7 7 0 0 1 10 10l-8 8" /></svg></button>
+            <textarea
+              v-model="inputText"
+              placeholder="输入消息..."
+              rows="1"
+              @keydown.enter.exact="handleComposerEnter"
+              @input="autoGrow"
+            ></textarea>
+            <button class="send-btn" @click="send" :disabled="!canSend" :title="sendHint" :aria-label="sendHint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 12 6-6 6 6M12 6v13" /></svg></button>
+          </div>
         </div>
       </template>
     </main>
@@ -181,6 +199,7 @@ import { useChatStore } from '../stores/chat'
 import { wsClient } from '../api/ws'
 import { uploadApi } from '../api/upload'
 import { createMediaCache } from '../api/media-cache'
+import { createAttachmentDrafts } from '../composables/attachment-drafts'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -194,7 +213,12 @@ const wsConnected = ref(false)
 const toastMsg = ref('')
 const mediaRevision = ref(0)
 const mediaErrors = ref({})
-const uploads = new Set()
+const attachmentRevision = ref(0)
+const attachmentDrafts = createAttachmentDrafts({
+  upload: (file, type, options) => file.size > 8 * 1024 * 1024 ? uploadApi.uploadResumable(file, type, options) : uploadApi.upload(file, type, options),
+  abortSession: id => uploadApi.abortSession(id),
+  onChange: () => { attachmentRevision.value++ }
+})
 const mediaCache = createMediaCache({ onChange: () => { mediaRevision.value++ } })
 
 const tab = ref('friends')
@@ -215,6 +239,17 @@ const groups = computed(() => userStore.groups)
 const currentChat = computed(() => chatStore.currentChat)
 const messages = computed(() => chatStore.currentMessages)
 const unreadMap = computed(() => chatStore.unreadMap)
+const chatScope = computed(() => currentChat.value ? currentChat.value.type + ':' + currentChat.value.id : '')
+const pendingAttachments = computed(() => { attachmentRevision.value; return [...attachmentDrafts.list(chatScope.value)] })
+const attachmentsReady = computed(() => pendingAttachments.value.every(item => item.status === 'ready'))
+const canSend = computed(() => wsConnected.value && attachmentsReady.value && !!(inputText.value.trim() || pendingAttachments.value.length))
+const sendHint = computed(() => !wsConnected.value ? '连接中，请稍候' : !attachmentsReady.value ? '等待附件上传完成，失败后可重试或移除' : '发送消息')
+
+function formatFileSize(size) {
+  if (size < 1024) return size + ' B'
+  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'
+  return (size / (1024 * 1024)).toFixed(1) + ' MB'
+}
 
 onMounted(() => {
   wsClient.on('open', () => { wsConnected.value = true })
@@ -246,13 +281,20 @@ function handleOpenChat(id) {
 }
 
 function send() {
+  if (!canSend.value || !currentChat.value) return
   const text = inputText.value.trim()
-  if (!text || !currentChat.value) return
-  chatStore.sendMessage(text)
+  if (text) chatStore.sendMessage(text)
+  attachmentDrafts.send(chatScope.value, (meta, type) => chatStore.sendMessage(meta, type))
   inputText.value = ''
   nextTick(() => {
     if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
   })
+}
+
+function handleComposerEnter(event) {
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  send()
 }
 
 function autoGrow(e) {
@@ -260,34 +302,11 @@ function autoGrow(e) {
   e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
 }
 
-async function handleFileSelect(e) {
-  const file = e.target.files?.[0]
-  if (!file || !currentChat.value) return
-
-  const targetChat = { ...currentChat.value }
-  const uploadToken = userStore.token
-  const controller = new AbortController()
-  uploads.add(controller)
-
-  // 按 MIME 判断类型
-  let fileType = 'file'
-  if (file.type.startsWith('image/')) fileType = 'image'
-  else if (file.type.startsWith('audio/')) fileType = 'voice'
-  else if (file.type.startsWith('video/')) fileType = 'video'
-
-  try {
-    const options = { signal: controller.signal, groupId: targetChat.type === 'group' ? targetChat.id : undefined }
-    const meta = await (file.size > 8 * 1024 * 1024
-      ? uploadApi.uploadResumable(file, fileType, options)
-      : uploadApi.upload(file, fileType, options))
-    if (uploadToken === userStore.token) chatStore.sendMessage(meta, fileType, targetChat)
-  } catch (err) {
-    if (!cancelled(err)) showToast('上传失败：' + (err.message || ''))
-  } finally {
-    uploads.delete(controller)
-  }
-  // 重置 input 允许重复选择同一文件
+function handleFileSelect(e) {
+  const files = Array.from(e.target.files || [])
   e.target.value = ''
+  if (!files.length || !currentChat.value) return
+  attachmentDrafts.add(chatScope.value, files)
 }
 
 async function handleAddFriend() {
@@ -371,6 +390,7 @@ async function previewImage(raw) {
 function handleStorageChange(event) {
   if (event.key === 'token' || event.key === null) {
     mediaCache.clear()
+    attachmentDrafts.clear()
     mediaErrors.value = {}
   }
 }
@@ -379,7 +399,7 @@ let mediaToken = userStore.token
 watch([() => userStore.token, () => messages.value.map(msg => [msg.msg_type, msg.content])], ([token]) => {
   if (token !== mediaToken) {
     mediaCache.clear()
-    for (const controller of uploads) controller.abort()
+    attachmentDrafts.clear()
     mediaErrors.value = {}
     mediaToken = token
   }
@@ -397,7 +417,7 @@ watch([() => userStore.token, () => messages.value.map(msg => [msg.msg_type, msg
 
 onBeforeUnmount(() => {
   mediaCache.clear()
-  for (const controller of uploads) controller.abort()
+  attachmentDrafts.clear()
   window.removeEventListener('storage', handleStorageChange)
   clearTimeout(toastTimer)
 })
@@ -658,10 +678,26 @@ watch(messages, () => {
 .msg-audio { display: block; max-width: 240px; }
 .msg-voice { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 
-.chat-input { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-end; }
+.composer { border-top: 1px solid var(--border); }
+.attachment-drafts { padding: 12px 20px 0; display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
+.attachment-draft { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); }
+.attachment-preview { width: 40px; height: 40px; object-fit: cover; border-radius: var(--radius); flex-shrink: 0; }
+.attachment-icon { width: 28px; height: 32px; margin: 4px 6px; color: var(--text-2); flex-shrink: 0; }
+.attachment-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.attachment-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-status { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+.attachment-status.error { color: var(--accent); }
+.attachment-remove, .attachment-retry { border: 0; background: none; color: var(--text-2); cursor: pointer; flex-shrink: 0; }
+.attachment-remove { display: grid; place-items: center; width: 32px; height: 32px; }
+.attachment-remove svg { width: 16px; height: 16px; }
+.attachment-retry { padding: 6px; font-size: 12px; color: var(--accent); }
+.attachment-remove:hover { background: var(--bg-4); color: var(--text); }
+.attachment-remove:focus-visible, .attachment-retry:focus-visible, .upload-btn:focus-visible, .send-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-input { padding: 12px 20px; display: flex; gap: 8px; align-items: flex-end; }
+.chat-area { min-width: 0; }
 
 .chat-input textarea {
-  flex: 1; padding: 10px 14px; background: var(--bg-2);
+  flex: 1; min-width: 0; padding: 10px 14px; background: var(--bg-2);
   border: 1px solid var(--border); border-radius: var(--radius);
   color: var(--text); font-size: 14px; resize: none;
   min-height: 42px; max-height: 120px; line-height: 1.5;
@@ -678,4 +714,20 @@ watch(messages, () => {
 .upload-btn:hover { background: var(--bg-4); color: var(--text); }
 .send-btn { background: var(--accent); color: #fff; }
 .send-btn:hover { background: var(--accent-2); }
+.upload-btn svg, .send-btn svg { width: 22px; height: 22px; }
+.send-btn:disabled { background: var(--bg-3); color: var(--text-2); cursor: not-allowed; }
+@media (max-width: 600px) {
+  .sidebar { width: 136px; flex-shrink: 0; }
+  .sidebar-top, .contact { padding: 12px 10px; gap: 8px; }
+  .sidebar-actions { padding: 8px; flex-wrap: wrap; }
+  .sidebar-actions input { min-width: 0; width: 100%; }
+  .chat-header { padding: 12px 10px; gap: 8px; flex-wrap: wrap; }
+  .chat-header-id { display: none; }
+  .messages { padding: 16px 10px; }
+  .attachment-drafts { padding: 8px 8px 0; }
+  .chat-input { padding: 8px; gap: 6px; }
+  .attachment-preview, .attachment-icon { width: 28px; height: 28px; margin: 0; }
+  .attachment-draft { gap: 6px; padding: 6px; }
+  .chat-input textarea { padding: 10px 8px; font-size: 16px; }
+}
 </style>

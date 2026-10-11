@@ -76,7 +76,7 @@ class WsClient {
   sendChat(fromId, toId, content, msgType = 'text', groupId = 0) {
     this.send({
       cmd: 'msg',
-      seq: Date.now().toString(),
+      seq: crypto.randomUUID(),
       data: { from_id: fromId, to_id: groupId > 0 ? 0 : toId, group_id: groupId, type: msgType, content }
     })
   }
