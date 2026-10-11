@@ -20,3 +20,6 @@ export { useChatStore } from '../src/stores/chat'
 export { useUserStore } from '../src/stores/user'
 
 export { default as http } from '../src/api/http'
+
+export { createMediaCache } from '../src/api/media-cache'
+export { conversationApi, groupApi, messageApi, userApi, friendApi, authApi } from '../src/api/user'

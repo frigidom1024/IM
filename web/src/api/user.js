@@ -1,4 +1,4 @@
-import http from './http'
+import http from './http.js'
 
 export const authApi = {
   register: (data) => http.post('/auth/register', data),
@@ -21,7 +21,15 @@ export const groupApi = {
   create: (data) => http.post('/group/create', data),
   join: (groupId) => http.post(`/group/${groupId}/join`),
   leave: (groupId) => http.delete(`/group/${groupId}/leave`),
-  getMembers: (groupId) => http.get(`/group/${groupId}/members`),
+  getMembers: (groupId, params) => http.get(`/group/${groupId}/members`, { params }),
+  search: (q, params) => http.get('/group/search', { params: { ...params, q } }),
+  invite: (groupId, userId) => http.post(`/group/${groupId}/invite`, { user_id: userId }),
+  transferOwner: (groupId, userId) => http.post(`/group/${groupId}/transfer`, { user_id: userId }),
+  updateAnnouncement: (groupId, announcement) => http.put(`/group/${groupId}/announcement`, { announcement }),
+  updateMember: (groupId, userId, patch) => http.patch(`/group/${groupId}/members/${userId}`, patch),
+  dissolve: groupId => http.delete(`/group/${groupId}`),
+  getReceipts: (groupId, messageId, params) => http.get(`/group/${groupId}/messages/${messageId}/receipts`, { params }),
+  getFiles: (groupId, params) => http.get(`/group/${groupId}/files`, { params }),
   removeMember: (groupId, userId) => http.delete(`/group/${groupId}/members/${userId}`)
 }
 
@@ -30,4 +38,9 @@ export const messageApi = {
   getGroup: (groupId) => http.get(`/message/group/${groupId}`),
   markRead: (data) => http.post('/message/read', data),
   getUnreadCount: () => http.get('/message/unread')
+}
+
+export const conversationApi = {
+  getList: params => http.get('/conversation', { params }),
+  update: (scope, patch) => http.patch(`/conversation/${encodeURIComponent(scope)}`, patch)
 }

@@ -120,11 +120,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function sendMessage(content, msgType = 'text') {
-    if (!currentChat.value) return
+  function sendMessage(content, msgType = 'text', targetChat = currentChat.value) {
+    if (!targetChat) return
     if (msgType === 'text' && typeof content === 'string' && !content.trim()) return
     const userStore = useUserStore()
-    const chat = currentChat.value
+    const chat = targetChat
     const key = chat.type === 'group' ? 'g' + chat.id : String(chat.id)
 
     // 构建消息对象
