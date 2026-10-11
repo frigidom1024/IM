@@ -127,6 +127,7 @@ func (s *MediaService) Append(ctx context.Context, id string, userID, offset int
 
 func (s *MediaService) Complete(ctx context.Context, id string, userID int64) (*model.MediaAsset, error) {
 	var asset model.MediaAsset
+	uploaded := false
 	err := mysql.Client.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var session model.UploadSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND user_id=?", id, userID).First(&session).Error; err != nil {
@@ -168,20 +169,10 @@ func (s *MediaService) Complete(ctx context.Context, id string, userID int64) (*
 		}
 		asset.Size = stat.Size()
 		asset.ObjectPath = "attachments/" + asset.ID
+		uploaded = true
 		if _, err = s.Store.Upload(ctx, asset.ObjectPath, file, asset.Size, asset.MIME); err != nil {
 			return err
 		}
-		committed := false
-		defer func() {
-			if !committed {
-				cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				s.Store.Delete(cleanup, asset.ObjectPath)
-				if asset.ThumbnailPath != "" {
-					s.Store.Delete(cleanup, asset.ThumbnailPath)
-				}
-			}
-		}()
 		if thumbnail != "" {
 			thumb, err := os.Open(thumbnail)
 			if err != nil {
@@ -203,9 +194,21 @@ func (s *MediaService) Complete(ctx context.Context, id string, userID int64) (*
 		if err = tx.Model(&session).Update("asset_id", asset.ID).Error; err != nil {
 			return err
 		}
-		committed = true
 		return nil
 	})
+	if err != nil && uploaded {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// Preserve a confirmed commit if its acknowledgement was lost.
+		var count int64
+		checkErr := mysql.Client.WithContext(cleanup).Model(&model.MediaAsset{}).Where("id=?", asset.ID).Count(&count).Error
+		if checkErr == nil && count == 0 {
+			s.Store.Delete(cleanup, asset.ObjectPath)
+			if asset.ThumbnailPath != "" {
+				s.Store.Delete(cleanup, asset.ThumbnailPath)
+			}
+		}
+	}
 	if err == nil {
 		var session model.UploadSession
 		if mysql.Client.WithContext(ctx).Where("id=? AND user_id=?", id, userID).First(&session).Error == nil {
@@ -236,14 +239,11 @@ func (s *MediaService) AuthorizedAsset(ctx context.Context, id string, userID in
 			return &asset, nil
 		}
 	}
-	// Only explicit non-revoked media messages grant recipient access. JSON_VALID
-	// protects legacy plain-text content; the value comparison prevents substring matches.
+	// Only validated shares committed by SendWithUnread grant recipient access.
 	var count int64
-	uri := "/api/file/" + asset.ID + "/download"
-	query := `SELECT COUNT(*) FROM message m WHERE m.is_revoked=0 AND m.msg_type IN ('image','file','voice','video') AND
- JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(m.content),m.content,'{}'),'$.url')) IN (?,?) AND
+	query := `SELECT COUNT(*) FROM message m JOIN message_asset ma ON ma.message_id=m.id WHERE m.is_revoked=0 AND ma.asset_id=? AND
  ((m.group_id=0 AND (m.from_id=? OR m.to_id=?)) OR m.group_id IN (SELECT group_id FROM group_member WHERE user_id=?))`
-	err := mysql.Client.WithContext(ctx).Raw(query, uri, asset.ObjectPath, userID, userID, userID).Scan(&count).Error
+	err := mysql.Client.WithContext(ctx).Raw(query, asset.ID, userID, userID, userID).Scan(&count).Error
 	if err != nil {
 		return nil, err
 	}

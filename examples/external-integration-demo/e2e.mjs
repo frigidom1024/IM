@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 const API_URL = process.env.GOCHAT_API_URL || 'http://localhost:18080';
 const EXTERNAL_URL = process.env.EXTERNAL_APP_URL || 'http://localhost:18090';
 const WS_URL = process.env.GOCHAT_WS_URL || 'ws://localhost:17000/ws';
@@ -184,7 +185,9 @@ async function main() {
   console.log('\nE2E integration test passed.');
 }
 
-main().catch((error) => {
+export { API_URL, fetchJSON, waitForHTTP, gochat, SocketClient, authenticate, assert };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((error) => {
   console.error(`\nE2E integration test failed: ${error.message}`);
   process.exitCode = 1;
 });

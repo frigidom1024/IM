@@ -168,7 +168,7 @@ func (h *UploadHandler) GroupFiles(c *gin.Context) {
 		return
 	}
 	var assets []model.MediaAsset
-	if err = db.Where("group_id=? AND (expires_at IS NULL OR expires_at>?)", groupID, time.Now()).Order("created_at DESC,id DESC").Limit(limit).Offset(int(offset)).Find(&assets).Error; err != nil {
+	if err = db.Where("(group_id=? OR id IN (SELECT ma.asset_id FROM message_asset ma JOIN message m ON m.id=ma.message_id WHERE m.group_id=? AND m.is_revoked=0)) AND (expires_at IS NULL OR expires_at>?)", groupID, groupID, time.Now()).Order("created_at DESC,id DESC").Limit(limit).Offset(int(offset)).Find(&assets).Error; err != nil {
 		mediaError(c, err)
 		return
 	}

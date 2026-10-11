@@ -1,9 +1,12 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
 	"gochat/sdk"
+	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -15,7 +18,8 @@ func TestBuiltinSDKIntegration(t *testing.T) {
 		t.Skip("set GOCHAT_URL, GOCHAT_TEST_USERNAME and GOCHAT_TEST_PASSWORD")
 	}
 	username, password := os.Getenv("GOCHAT_TEST_USERNAME"), os.Getenv("GOCHAT_TEST_PASSWORD")
-	if username == "" || password == "" {
+	external := os.Getenv("GOCHAT_EXTERNAL_TOKEN")
+	if external == "" && (username == "" || password == "") {
 		t.Fatal("test credentials required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -24,7 +28,12 @@ func TestBuiltinSDKIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth, err := client.Login(ctx, sdk.LoginRequest{Username: username, Password: password})
+	var auth *sdk.AuthResponse
+	if external != "" {
+		auth, err = client.ExternalAuth(ctx, external)
+	} else {
+		auth, err = client.Login(ctx, sdk.LoginRequest{Username: username, Password: password})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,6 +43,30 @@ func TestBuiltinSDKIntegration(t *testing.T) {
 	}
 	if _, err = user.ListFriends(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if _, err = user.ListConversations(ctx, 50, 0); err != nil {
+		t.Fatal(err)
+	}
+	progress := int64(0)
+	meta, err := user.UploadFile(ctx, sdk.UploadFileRequest{File: bytes.NewReader([]byte("sdk consumer")), Name: "consumer.txt", Type: "file", MIME: "text/plain", Size: 12, Progress: func(done, total int64) { progress = done }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress != 12 {
+		t.Fatalf("progress=%d", progress)
+	}
+	parts := strings.Split(meta.URL, "/")
+	if len(parts) != 5 {
+		t.Fatalf("download URL=%s", meta.URL)
+	}
+	response, err := user.DownloadFile(ctx, parts[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, readErr := io.ReadAll(response.Body)
+	response.Body.Close()
+	if readErr != nil || string(data) != "sdk consumer" {
+		t.Fatalf("download=%q err=%v", data, readErr)
 	}
 	ws, err := user.ConnectWebSocket(ctx)
 	if err != nil {

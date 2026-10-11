@@ -24,3 +24,8 @@ CREATE TABLE IF NOT EXISTS media_asset (
  INDEX idx_asset_group(group_id,created_at), INDEX idx_asset_expiry(expires_at),
  UNIQUE KEY uk_asset_path(object_path)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS message_asset (
+ message_id BIGINT NOT NULL, asset_id VARCHAR(64) NOT NULL,
+ PRIMARY KEY(message_id,asset_id), INDEX idx_message_asset(asset_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

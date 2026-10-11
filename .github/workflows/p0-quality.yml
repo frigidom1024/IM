@@ -2,7 +2,7 @@ name: p0-quality
 
 on:
   push:
-    branches: [main, master, feat/p0]
+    branches: [main, master, 'codex/**']
   pull_request:
   workflow_dispatch:
 
@@ -72,7 +72,9 @@ jobs:
 
       - name: Run external integration E2E
         working-directory: examples/external-integration-demo
-        run: node e2e.mjs
+        run: |
+          node e2e.mjs
+          node p1-e2e.mjs
 
       - name: Dump service logs on failure
         if: failure()

@@ -1,9 +1,12 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"gochat/internal/logic/model"
 	"gochat/internal/logic/registry"
 	"gochat/internal/pkg/mysql"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -34,6 +37,22 @@ func (s *MessageService) Send(msg *model.Message) error {
 
 // SendWithUnread persists a message and all affected unread summaries atomically.
 func (s *MessageService) SendWithUnread(msg *model.Message, targets []model.UnreadTarget) error {
+	var assetID string
+	if msg.MsgType == model.MsgTypeImage || msg.MsgType == model.MsgTypeFile || msg.MsgType == model.MsgTypeVoice || msg.MsgType == model.MsgTypeVideo {
+		var reference struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal([]byte(msg.Content), &reference) == nil && strings.HasPrefix(reference.URL, "/api/file/") {
+			parts := strings.Split(strings.TrimPrefix(reference.URL, "/api/file/"), "/")
+			if len(parts) != 2 || parts[1] != "download" {
+				return ErrMediaForbidden
+			}
+			if _, err := (&MediaService{}).AuthorizedAsset(context.Background(), parts[0], msg.FromID); err != nil {
+				return ErrMediaForbidden
+			}
+			assetID = parts[0]
+		}
+	}
 	return mysql.Client.Transaction(func(tx *gorm.DB) error {
 		if msg.GroupID > 0 {
 			var group model.Group
@@ -58,6 +77,11 @@ func (s *MessageService) SendWithUnread(msg *model.Message, targets []model.Unre
 		}
 		if err := s.messageRepo.CreateWithTx(tx, msg); err != nil {
 			return err
+		}
+		if assetID != "" {
+			if err := tx.Create(&model.MessageAsset{MessageID: msg.ID, AssetID: assetID}).Error; err != nil {
+				return err
+			}
 		}
 		for _, target := range targets {
 			if err := s.messageReadRepo.IncrUnreadWithTx(tx, target.UserID, target.FromID, target.GroupID, msg); err != nil {

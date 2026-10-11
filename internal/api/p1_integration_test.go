@@ -2,14 +2,20 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/websocket"
+	"gochat/internal/connect"
+	wsHandler "gochat/internal/connect/handler"
 	"gochat/internal/logic/model"
 	"gochat/internal/logic/registry"
+	"gochat/internal/logic/service"
 	"gochat/internal/pkg/config"
 	"gochat/internal/pkg/logger"
 	"gochat/internal/pkg/minio"
 	"gochat/internal/pkg/mysql"
+	"gochat/internal/pkg/snowflake"
 	"gochat/internal/pkg/util"
 	driver "gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -36,7 +42,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 	previous := mysql.Client
 	mysql.Client = db
 	defer func() { mysql.Client = previous; sqlDB, _ := db.DB(); sqlDB.Close() }()
-	if err = db.AutoMigrate(&model.User{}, &model.Friend{}, &model.Group{}, &model.GroupMember{}, &model.Message{}, &model.UnreadCount{}, &model.ConversationPreference{}, &model.UploadSession{}, &model.MediaAsset{}); err != nil {
+	if err = db.AutoMigrate(&model.User{}, &model.Friend{}, &model.Group{}, &model.GroupMember{}, &model.Message{}, &model.UnreadCount{}, &model.ConversationPreference{}, &model.UploadSession{}, &model.MediaAsset{}, &model.MessageAsset{}); err != nil {
 		t.Fatal(err)
 	}
 	if err = logger.Init("error", "stdout"); err != nil {
@@ -50,7 +56,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 		}
 	}
 	defer func() {
-		for _, table := range []string{"media_asset", "upload_session", "conversation_preference", "unread_count", "message", "group_member", "group", "friend", "user"} {
+		for _, table := range []string{"message_asset", "media_asset", "upload_session", "conversation_preference", "unread_count", "message", "group_member", "group", "friend", "user"} {
 			db.Exec("DELETE FROM `" + table + "`")
 		}
 	}()
@@ -146,8 +152,46 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 		t.Fatalf("range=%q", ranged)
 	}
 	request("GET", meta.Data.URL, token2, "", nil, nil, 403)
+	// A client-controlled media URL must not turn an unauthorized sender into
+	// a participant with download rights. Assert through the real WS ACK path.
+	if err = snowflake.Init(0, 1); err != nil {
+		t.Fatal(err)
+	}
+	ws := connect.NewWsConnServer()
+	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(service.NewMessageService(registry.NewMessageRepository(), registry.NewMessageReadRepository()), service.NewGroupService(registry.NewGroupRepository(), registry.NewGroupMemberRepository()), ws))
+	wsServer := httptest.NewServer(http.HandlerFunc(ws.HandleWebSocket))
+	defer wsServer.Close()
+	defer ws.Shutdown(context.Background())
+	sendMedia := func(token, seq string, from, to int64, want string) {
+		t.Helper()
+		conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(wsServer.URL, "http")+"?token="+token, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		if err = conn.WriteJSON(map[string]any{"cmd": "msg", "seq": seq, "data": map[string]any{"from_id": from, "to_id": to, "type": "file", "content": string(data)}}); err != nil {
+			t.Fatal(err)
+		}
+		var reply struct{ Cmd string }
+		if err = conn.ReadJSON(&reply); err != nil {
+			t.Fatal(err)
+		}
+		if reply.Cmd != want {
+			t.Fatalf("media share command=%s want=%s", reply.Cmd, want)
+		}
+	}
+	// Use the actual FileMeta content, not the HTTP response envelope.
+	metaJSON, _ := json.Marshal(meta.Data)
+	data = metaJSON
+	sendMedia(token2, "forged-file-share", 9102, 9103, "error")
+	request("GET", meta.Data.URL, token2, "", nil, nil, 403)
+	sendMedia(token1, "owned-file-share", 9101, 9102, "msg_reply")
+	request("GET", meta.Data.URL, token2, "", nil, nil, 200)
 	again := request("POST", path+"/complete", token1, "application/json", strings.NewReader(`{}`), nil, 200)
-	if !bytes.Equal(data, again) {
+	var completed struct{ Data minio.FileMeta }
+	json.Unmarshal(again, &completed)
+	if completed.Data.URL != meta.Data.URL {
 		t.Fatalf("completion isn't idempotent: %s / %s", data, again)
 	}
 	request("DELETE", path, token1, "", nil, nil, 500)

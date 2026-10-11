@@ -26,6 +26,8 @@ try {
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
   }
+  node (Join-Path $PSScriptRoot 'p1-e2e.mjs')
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
   if ($KeepData) {
     docker compose -f $compose down

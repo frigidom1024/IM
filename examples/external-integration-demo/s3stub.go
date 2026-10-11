@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -53,8 +53,8 @@ func registerS3Stub(mux *http.ServeMux) {
 				return
 			}
 			hasher := md5.New()
-			if strings.Contains(r.Header.Get("Content-Encoding"),"aws-chunked") {
-				err = decodeAWSChunks(io.MultiWriter(file,hasher),r.Body)
+			if strings.Contains(r.Header.Get("Content-Encoding"), "aws-chunked") || strings.HasPrefix(r.Header.Get("X-Amz-Content-Sha256"), "STREAMING-") {
+				err = decodeAWSChunks(io.MultiWriter(file, hasher), r.Body)
 			} else {
 				_, err = io.Copy(io.MultiWriter(file, hasher), io.LimitReader(r.Body, 16<<20))
 			}
@@ -95,14 +95,27 @@ func registerS3Stub(mux *http.ServeMux) {
 	})
 }
 
-func decodeAWSChunks(writer io.Writer,reader io.Reader) error {
- buffered:=bufio.NewReader(reader)
- total:=int64(0)
- for {
-  header,err:=buffered.ReadString('\n');if err!=nil { return err }
-  length,err:=strconv.ParseInt(strings.Split(strings.TrimSpace(header),";")[0],16,64);if err!=nil || length<0 || total+length>16<<20 { return io.ErrUnexpectedEOF }
-  if length==0 { return nil }
-  if _,err=io.CopyN(writer,buffered,length);err!=nil { return err }
-  if _,err=buffered.ReadString('\n');err!=nil { return err };total+=length
- }
+func decodeAWSChunks(writer io.Writer, reader io.Reader) error {
+	buffered := bufio.NewReader(reader)
+	total := int64(0)
+	for {
+		header, err := buffered.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		length, err := strconv.ParseInt(strings.Split(strings.TrimSpace(header), ";")[0], 16, 64)
+		if err != nil || length < 0 || total+length > 16<<20 {
+			return io.ErrUnexpectedEOF
+		}
+		if length == 0 {
+			return nil
+		}
+		if _, err = io.CopyN(writer, buffered, length); err != nil {
+			return err
+		}
+		if _, err = buffered.ReadString('\n'); err != nil {
+			return err
+		}
+		total += length
+	}
 }

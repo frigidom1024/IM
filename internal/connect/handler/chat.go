@@ -137,7 +137,7 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 }
 
 func (h *ChatHandler) sendMsgAck(userID, seq string, messageID int64, duplicate bool) {
-	ackData := map[string]any{"status": "success", "message_id": messageID, "duplicate": duplicate}
+	ackData := map[string]any{"status": "success", "message_id": messageID, "message_id_string": strconv.FormatInt(messageID, 10), "duplicate": duplicate}
 	h.connSvr.Send(userID, connect.NewRawMessage(connect.CmdMsgReply, seq, ackData))
 }
 

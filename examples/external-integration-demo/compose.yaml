@@ -13,6 +13,7 @@ services:
       - mysql-data:/var/lib/mysql
       - ../../gochat/mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ../../gochat/mysql/migrations/003_p1_conversations_media.sql:/docker-entrypoint-initdb.d/03-p1.sql:ro
+      - ../../gochat/mysql/migrations/004_p1_groups.sql:/docker-entrypoint-initdb.d/04-p1.sql:ro
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]

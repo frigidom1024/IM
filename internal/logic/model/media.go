@@ -37,3 +37,11 @@ type MediaAsset struct {
 }
 
 func (MediaAsset) TableName() string { return "media_asset" }
+
+// MessageAsset records validated shares, committed with their messages.
+type MessageAsset struct {
+	MessageID int64  `gorm:"primaryKey"`
+	AssetID   string `gorm:"primaryKey;size:64;index"`
+}
+
+func (MessageAsset) TableName() string { return "message_asset" }

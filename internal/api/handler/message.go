@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -157,20 +158,29 @@ func (h *MessageHandler) MarkRead(c *gin.Context) {
 	}
 
 	var req struct {
-		FromID    int64 `json:"from_id"`
-		GroupID   int64 `json:"group_id"`
-		MessageID int64 `json:"message_id"`
+		FromID    int64       `json:"from_id"`
+		GroupID   int64       `json:"group_id"`
+		MessageID json.Number `json:"message_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
 		return
 	}
+	messageID := int64(0)
+	if req.MessageID != "" {
+		var err error
+		messageID, err = req.MessageID.Int64()
+		if err != nil || messageID < 0 {
+			groupResult(c, nil, service.ErrGroupInvalid)
+			return
+		}
+	}
 
 	if req.GroupID > 0 {
-		groupResult(c, nil, (service.GroupAdminService{}).MarkRead(req.GroupID, userID, req.MessageID))
+		groupResult(c, nil, (service.GroupAdminService{}).MarkRead(req.GroupID, userID, messageID))
 		return
 	}
-	if req.GroupID < 0 || req.FromID <= 0 || req.MessageID < 0 {
+	if req.GroupID < 0 || req.FromID <= 0 || messageID < 0 {
 		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
