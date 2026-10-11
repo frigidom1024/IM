@@ -1,127 +1,109 @@
 package handler
 
 import (
-	"fmt"
-	"io"
-	"path"
-	"strings"
-	"time"
-
-	"gochat/internal/pkg/errors"
-	"gochat/internal/pkg/logger"
-	"gochat/internal/pkg/minio"
-	"gochat/internal/pkg/snowflake"
-
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
+	"gochat/internal/logic/model"
+	"gochat/internal/logic/service"
+	apierrors "gochat/internal/pkg/errors"
+	"gochat/internal/pkg/minio"
+	"gochat/internal/pkg/mysql"
+	"io"
+	"mime"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 const (
-	pathImages = "images"
-	pathFiles  = "files"
-	pathVoices = "voices"
-	pathVideos = "videos"
-)
-
-const (
-	maxImageSize = 50 << 20  // 50MB
-	maxFileSize  = 500 << 20 // 500MB
-	maxVoiceSize = 50 << 20  // 50MB
-	maxVideoSize = 1024 << 20 // 1GB
+	maxImageSize = 50 << 20
+	maxFileSize  = 500 << 20
+	maxVoiceSize = 50 << 20
+	maxVideoSize = 1024 << 20
 )
 
 var allowedMIME = map[string][]string{
 	"image": {"image/jpeg", "image/png", "image/gif", "image/webp"},
 	"file":  {"application/pdf", "application/zip", "application/gzip", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
-	"voice": {"audio/mp3", "audio/wav", "audio/ogg", "audio/aac"},
+	"voice": {"audio/mp3", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/ogg", "audio/aac"},
 	"video": {"video/mp4", "video/webm", "video/quicktime"},
 }
+var maxSizeMap = map[string]int64{"image": maxImageSize, "file": maxFileSize, "voice": maxVoiceSize, "video": maxVideoSize}
 
-var maxSizeMap = map[string]int64{
-	"image": maxImageSize,
-	"file":  maxFileSize,
-	"voice": maxVoiceSize,
-	"video": maxVideoSize,
+type UploadHandler struct{ minioClient *minio.Client }
+
+func NewUploadHandler(client *minio.Client) *UploadHandler {
+	return &UploadHandler{minioClient: client}
 }
 
-// UploadHandler 文件上传处理器
-type UploadHandler struct {
-	minioClient *minio.Client
-}
-
-// NewUploadHandler 创建上传处理器
-func NewUploadHandler(minioClient *minio.Client) *UploadHandler {
-	return &UploadHandler{minioClient: minioClient}
-}
-
-// Upload 上传文件
+// Upload preserves the multipart API while streaming through a disk-backed
+// session. The response now contains an authenticated download route.
 func (h *UploadHandler) Upload(c *gin.Context) {
-	msgType := c.PostForm("type")
-	if msgType == "" {
-		errors.RespondError(c, errors.New(errors.CodeUploadMissType, "缺少 type 参数"))
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxVideoSize+(1<<20))
+	if err := c.Request.ParseMultipartForm(8 << 20); err != nil {
+		apierrors.RespondBadRequest(c, "无效或过大的上传请求")
 		return
 	}
-
-	mimes, ok := allowedMIME[msgType]
-	if !ok {
-		errors.RespondError(c, errors.New(errors.CodeUploadBadType, fmt.Sprintf("不支持的消息类型: %s", msgType)))
-		return
-	}
-
-	maxSize, ok := maxSizeMap[msgType]
-	if !ok {
-		errors.RespondError(c, errors.New(errors.CodeUploadBadType, "无效的消息类型"))
-		return
-	}
-
+	defer c.Request.MultipartForm.RemoveAll()
+	kind := c.PostForm("type")
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
-		errors.RespondBadRequest(c, "读取文件失败")
+		apierrors.RespondBadRequest(c, "缺少文件")
 		return
 	}
 	defer file.Close()
-
-	if header.Size > maxSize {
-		errors.RespondError(c, errors.New(errors.CodeUploadTooLarge,
-			fmt.Sprintf("文件过大，%s 类型最大允许 %dMB", msgType, maxSize>>20)))
+	contentType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
+	if err != nil || !validMedia(kind, contentType, header.Size) {
+		apierrors.RespondBadRequest(c, "无效的文件类型或大小")
 		return
 	}
-
-	contentType := header.Header.Get("Content-Type")
-	valid := false
-	for _, m := range mimes {
-		if contentType == m {
-			valid = true
-			break
+	groupID := int64(0)
+	if value := c.PostForm("group_id"); value != "" {
+		groupID, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || groupID <= 0 {
+			apierrors.RespondBadRequest(c, "无效群组ID")
+			return
 		}
 	}
-	if !valid {
-		errors.RespondError(c, errors.New(errors.CodeUploadBadMIME,
-			fmt.Sprintf("不支持的文件类型: %s", contentType)))
+	name := filepath.Base(strings.ReplaceAll(header.Filename, "\\", "/"))
+	if len(name) > 255 {
+		apierrors.RespondBadRequest(c, "文件名过长")
 		return
 	}
-
-	ext := path.Ext(header.Filename)
-	objectPath := fmt.Sprintf("%s/%s/%d%s",
-		msgType+"s",
-		time.Now().Format("2006/01"),
-		snowflake.MustNextID(),
-		ext,
-	)
-
-	data, err := io.ReadAll(file)
+	session := &model.UploadSession{UserID: c.GetInt64("userID"), GroupID: groupID, Name: name, Type: kind, MIME: contentType, Size: header.Size}
+	svc := h.mediaService()
+	if err = svc.CreateSession(c.Request.Context(), session); err != nil {
+		mediaError(c, err)
+		return
+	}
+	completed := false
+	defer func() {
+		if !completed {
+			svc.Abort(c.Request.Context(), session.ID, session.UserID)
+		}
+	}()
+	dest, err := os.OpenFile(session.TempPath, os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
-		logger.Error("读取文件数据失败", zap.Error(err))
-		errors.RespondError(c, errors.New(errors.CodeUploadReadFail, "读取文件失败"))
+		mediaError(c, err)
 		return
 	}
-
-	meta, err := h.minioClient.Upload(c.Request.Context(), objectPath, strings.NewReader(string(data)), int64(len(data)), contentType)
+	written, copyErr := io.Copy(dest, io.LimitReader(file, session.Size+1))
+	syncErr := dest.Sync()
+	closeErr := dest.Close()
+	if copyErr != nil || syncErr != nil || closeErr != nil || written != session.Size {
+		apierrors.RespondBadRequest(c, "上传不完整")
+		return
+	}
+	if err = mysql.Client.WithContext(c.Request.Context()).Model(session).Update("offset", written).Error; err != nil {
+		mediaError(c, err)
+		return
+	}
+	asset, err := svc.Complete(c.Request.Context(), session.ID, session.UserID)
 	if err != nil {
-		logger.Error("上传文件到 MinIO 失败", zap.String("path", objectPath), zap.Error(err))
-		errors.RespondError(c, errors.New(errors.CodeUploadFail, "上传文件失败"))
+		mediaError(c, err)
 		return
 	}
-
-	errors.RespondOK(c, meta)
+	completed = true
+	apierrors.RespondOK(c, service.MediaMetadata(asset))
 }

@@ -4,8 +4,9 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY sdk ./sdk
 COPY examples/external-integration-demo/main.go ./main.go
+COPY examples/external-integration-demo/s3stub.go ./s3stub.go
 COPY examples/external-integration-demo/public ./public
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /integration-demo ./main.go
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /integration-demo ./main.go ./s3stub.go
 
 FROM alpine:3.20
 

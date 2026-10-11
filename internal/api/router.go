@@ -78,6 +78,8 @@ func NewRouter(
 		protected := apiGroup.Group("")
 		protected.Use(middleware.AuthMiddleware())
 		{
+			protected.GET("/conversation", handler.ListConversations)
+			protected.PATCH("/conversation/:scope", handler.UpdateConversation)
 			user := protected.Group("/user")
 			user.GET("/info/:id", userHandler.GetInfo)
 			user.PUT("/profile", userHandler.UpdateProfile)
@@ -103,6 +105,14 @@ func NewRouter(
 			message.GET("/unread", messageHandler.GetUnreadCount)
 
 			protected.POST("/upload", uploadHandler.Upload)
+			protected.POST("/upload/session", uploadHandler.CreateSession)
+			protected.GET("/upload/session/:uploadId", uploadHandler.GetSession)
+			protected.PATCH("/upload/session/:uploadId", uploadHandler.AppendSession)
+			protected.POST("/upload/session/:uploadId/complete", uploadHandler.CompleteSession)
+			protected.DELETE("/upload/session/:uploadId", uploadHandler.AbortSession)
+			protected.GET("/file/:fileId/download", uploadHandler.Download)
+			protected.GET("/file/:fileId/thumbnail", uploadHandler.Thumbnail)
+			group.GET("/:groupId/files", uploadHandler.GroupFiles)
 		}
 	}
 

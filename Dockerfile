@@ -17,10 +17,12 @@ RUN CGO_ENABLED=0 go build -tags=etcd -o im-server ./cmd/im-server
 # ===== Run Stage =====
 FROM alpine:3.19
 
-RUN apk add --no-cache tzdata ca-certificates
+RUN apk add --no-cache tzdata ca-certificates ffmpeg
 
 WORKDIR /app
 RUN mkdir -p /app/internal/config
+ENV GOCHAT_UPLOAD_DIR=/app/uploads
+RUN mkdir -p /app/uploads
 
 COPY --from=builder /build/im-server .
 

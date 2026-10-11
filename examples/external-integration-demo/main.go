@@ -82,23 +82,6 @@ func registerExternalApp(mux *http.ServeMux) {
 	})
 }
 
-func registerS3Stub(mux *http.ServeMux) {
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "s3-stub"})
-	})
-
-	// The auth/chat E2E does not exercise file upload. This tiny S3-compatible
-	// stub accepts bucket setup requests made by the MinIO client at startup.
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Server", "integration-s3-stub")
-		if r.Method == http.MethodHead {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-}
-
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	body, err := json.Marshal(value)
 	if err != nil {
