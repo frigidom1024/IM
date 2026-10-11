@@ -30,20 +30,26 @@ func WithWebSocketHeader(key, value string) WSOption {
 // the failed message automatically; callers can safely retry with the same
 // seq so the server-side idempotency contract prevents duplicates.
 type WebSocketClient struct {
-	connMu      sync.RWMutex
-	reconnectMu sync.Mutex
-	conn        *websocket.Conn
-	endpoint    string
-	headers     http.Header
-	closed      bool
+	connMu        sync.RWMutex
+	writeMu       sync.Mutex
+	readMu        sync.Mutex
+	tokenProvider func(context.Context) (string, error)
+	lifetime      context.Context
+	cancel        context.CancelFunc
+	reconnectMu   sync.Mutex
+	conn          *websocket.Conn
+	endpoint      string
+	headers       http.Header
+	closed        bool
 }
 
 // ConnectWebSocket connects using the client's configured WebSocket endpoint.
 // If no endpoint was configured, the SDK derives one from the HTTP base URL
 // and appends /ws. Use WithWebSocketURL when API and WebSocket ports differ.
 func (c *Client) ConnectWebSocket(ctx context.Context, options ...WSOption) (*WebSocketClient, error) {
-	if c.token == "" {
-		return nil, ErrMissingToken
+	token, err := c.authToken(ctx)
+	if err != nil {
+		return nil, err
 	}
 	endpoint, err := c.websocketEndpoint()
 	if err != nil {
@@ -51,7 +57,7 @@ func (c *Client) ConnectWebSocket(ctx context.Context, options ...WSOption) (*We
 	}
 
 	headers := http.Header{}
-	headers.Set("Authorization", "Bearer "+NormalizeToken(c.token))
+	headers.Set("Authorization", "Bearer "+token)
 	for _, option := range options {
 		if option == nil {
 			continue
@@ -69,16 +75,29 @@ func (c *Client) ConnectWebSocket(ctx context.Context, options ...WSOption) (*We
 		}
 		return nil, fmt.Errorf("gochat sdk: websocket connect: %w", err)
 	}
+	var tokenProvider func(context.Context) (string, error)
+	if c.refresh != nil {
+		tokenProvider = c.authToken
+	}
+	lifetime, cancel := context.WithCancel(context.Background())
 	return &WebSocketClient{
-		conn:     conn,
-		endpoint: endpoint,
-		headers:  cloneHeader(headers),
+		tokenProvider: tokenProvider,
+		lifetime:      lifetime,
+		cancel:        cancel,
+		conn:          conn,
+		endpoint:      endpoint,
+		headers:       cloneHeader(headers),
 	}, nil
 }
 
 // Send writes a raw protocol message. If the write fails, the SDK reconnects
 // but returns the error without replaying the message.
 func (c *WebSocketClient) Send(message WSMessage) error {
+	if c == nil {
+		return errors.New("gochat sdk: websocket is not connected")
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	conn, err := c.connection()
 	if err != nil {
 		return err
@@ -114,6 +133,11 @@ func (c *WebSocketClient) Ping() error {
 // Receive reads and decodes one protocol message. Transient connection
 // failures are reconnected transparently and are not returned to the caller.
 func (c *WebSocketClient) Receive() (WSMessage, error) {
+	if c == nil {
+		return WSMessage{}, errors.New("gochat sdk: websocket is not connected")
+	}
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
 	for {
 		conn, err := c.connection()
 		if err != nil {
@@ -151,6 +175,9 @@ func (c *WebSocketClient) Close() error {
 		return nil
 	}
 	c.closed = true
+	if c.cancel != nil {
+		c.cancel()
+	}
 	conn := c.conn
 	c.conn = nil
 	c.connMu.Unlock()
@@ -171,7 +198,7 @@ func (c *WebSocketClient) connection() (*websocket.Conn, error) {
 		return nil, errors.New("gochat sdk: websocket is closed")
 	}
 	if conn == nil {
-		if err := c.reconnect(context.Background()); err != nil {
+		if err := c.reconnect(c.lifetime); err != nil {
 			return nil, err
 		}
 		c.connMu.RLock()
@@ -201,10 +228,14 @@ func (c *WebSocketClient) reconnectFrom(previous *websocket.Conn) error {
 	if current != previous && current != nil {
 		return nil
 	}
-	return c.reconnect(context.Background())
+	return c.reconnect(c.lifetime)
 }
 
 func (c *WebSocketClient) reconnect(ctx context.Context) error {
+	ctx, cancelLifetime := context.WithCancel(ctx)
+	stop := context.AfterFunc(c.lifetime, cancelLifetime)
+	defer func() { stop(); cancelLifetime() }()
+
 	c.reconnectMu.Lock()
 	defer c.reconnectMu.Unlock()
 
@@ -225,7 +256,16 @@ func (c *WebSocketClient) reconnect(ctx context.Context) error {
 			}
 		}
 		dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		conn, response, err := dialWebSocket(dialCtx, c.endpoint, c.headers)
+		headers := cloneHeader(c.headers)
+		if c.tokenProvider != nil {
+			token, tokenErr := c.tokenProvider(dialCtx)
+			if tokenErr != nil {
+				cancel()
+				return tokenErr
+			}
+			headers.Set("Authorization", "Bearer "+token)
+		}
+		conn, response, err := dialWebSocket(dialCtx, c.endpoint, headers)
 		cancel()
 		if err == nil {
 			c.connMu.Lock()

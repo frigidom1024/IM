@@ -130,7 +130,13 @@ type UnreadSummary struct {
 
 // UploadRequest describes a file upload.
 type UploadRequest struct {
-	File        io.Reader
+	// File is read incrementally. The caller owns it and should make blocking
+	// readers cancellation-aware. Progress executes on the upload goroutine.
+	File io.Reader
+	// Size is the total file size for progress (zero means unknown).
+	Size int64
+	// Progress reports bytes read from File, not bytes acknowledged by storage.
+	Progress    func(sent, total int64)
 	Filename    string
 	ContentType string
 	Type        string

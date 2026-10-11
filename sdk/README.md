@@ -165,3 +165,64 @@ if err != nil {
 ### 消息幂等重试
 
 SDK 的 WebSocket `SendChat` 会生成 `seq`。调用方在没有收到 ACK 时，可以使用同一个 seq 重试原始消息；服务端会返回原 `message_id`，并在 ACK 中设置 `duplicate: true`，不会重复保存或重复增加未读数。
+
+## SDK 0.2.0 configuration
+
+The semantic version is `sdk.Version`; see `CHANGELOG.md`.
+
+```go
+client, err := sdk.NewClient(baseURL,
+    sdk.WithTimeout(10*time.Second),
+    sdk.WithTransport(http.DefaultTransport),
+    sdk.WithReadRetry(2, 100*time.Millisecond),
+    sdk.WithTokenRefresh(func(ctx context.Context, current string) (string, error) {
+        // Check your cached expiration and refresh when needed.
+        return current, nil
+    }),
+)
+user := client.WithToken(jwt)
+```
+
+Options apply in order. Defaults: 15-second HTTP timeout, no read retries.
+Bodyless GET requests may retry transport errors and HTTP 429/502/503/504,
+with at most five retries and context-aware linear backoff. Writes and uploads
+are never replayed. Authentication failures are returned without replay;
+the refresh callback checks validity before the request or WS handshake.
+It is serialized per user client. Do not reenter the same client from that
+callback. `WithToken` creates independent token state for each user.
+
+`WithLogger` accepts a `Log(context.Context, string, map[string]any)` logger.
+Only fixed events, HTTP method, status, attempt, duration and transport-error
+boolean are recorded; URLs, parameters, bodies, tokens and raw errors are
+excluded. The supplied logger must support concurrent calls.
+
+WebSocket sends and receives are serialized. Failed sends still require the
+caller to choose whether to resend with the original seq. `Close` cancels
+pending reconnect delays and handshakes. For a Receive deadline, use
+`context.AfterFunc(ctx, func(){ ws.Close() })`.
+
+## Streaming uploads
+
+```go
+meta, err := user.Upload(ctx, sdk.UploadRequest{
+    File: file, Filename: "video.mp4", Type: "video", Size: size,
+    Progress: func(sent, total int64) { /* update progress */ },
+})
+```
+
+Multipart data is streamed with bounded buffering. Progress runs on the upload
+goroutine and reports bytes read from the input, not bytes acknowledged by
+storage. Size zero means unknown. The caller owns the reader; blocking readers
+should honor cancellation. An early server rejection closes the upload pipe.
+
+## Runnable adapters and independent integration consumer
+
+Set a development `GOCHAT_EXAMPLE_TOKEN` and run `go run ./examples/sdk-nethttp`
+(port 8090) or `go run ./examples/sdk-gin` (8091). Configure GoChat's
+`auth.external_user_api` to point at its `/api/user/info`. Replace the fixed
+example token resolver with your own authentication implementation.
+
+`examples/sdk-integration` is a separate module consuming only the public SDK.
+Run `go test -v ./...` there against a running Docker stack using the environment
+variables described in its README. Without a server URL the live test explicitly
+skips; this does not count as verifying the Docker server.
