@@ -5,6 +5,12 @@
 # Go build output
 bin/
 *.exe
+/im-server
+web/node_modules/
+web/dist/
+web/core/dist/
+web/node_modules/**
+.playwright-mcp/
 
 # Runtime-only configuration and generated files
 internal/config/

@@ -13,6 +13,7 @@ RUN go mod download
 # 拷贝源码并编译
 COPY . .
 RUN CGO_ENABLED=0 go build -tags=etcd -o im-server ./cmd/im-server
+RUN CGO_ENABLED=0 go build -o im-maintenance ./cmd/im-maintenance
 
 # ===== Run Stage =====
 FROM alpine:3.19
@@ -25,6 +26,7 @@ ENV GOCHAT_UPLOAD_DIR=/app/uploads
 RUN mkdir -p /app/uploads
 
 COPY --from=builder /build/im-server .
+COPY --from=builder /build/im-maintenance .
 
 # 配置文件通过外部 volume 挂载
 EXPOSE 8080 7000

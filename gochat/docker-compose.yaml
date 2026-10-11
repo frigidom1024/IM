@@ -15,6 +15,7 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
       - ./mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./mysql/migrations/003_p1_conversations_media.sql:/docker-entrypoint-initdb.d/03-p1.sql:ro
     command: --default-authentication-plugin=mysql_native_password
     networks:
       - gochat-network
@@ -81,6 +82,7 @@ services:
         condition: service_started
     volumes:
       - ../internal/config/config-dev.yaml:/app/internal/config/config-dev.yaml
+      - uploads-data:/app/uploads
     environment:
       - TZ=Asia/Shanghai
     networks:
@@ -104,6 +106,7 @@ volumes:
   mysql-data:
   redis-data:
   minio-data:
+  uploads-data:
 
 networks:
   gochat-network:
