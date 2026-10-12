@@ -22,6 +22,8 @@ async function download(path,token,expected=200) {
 async function main() {
   await waitForHTTP(API_URL+'/readyz');
   const alice=await authenticate('demo-alice'), bob=await authenticate('demo-bob');
+	await gochat('/api/friend/add',alice.token,json('POST',{friend_id:bob.user.id}));
+	await gochat('/api/friend/add',bob.token,json('POST',{friend_id:alice.user.id}));
   let aliceSocket,bobSocket;
   const label=`p1-${Date.now()}`;
   try {

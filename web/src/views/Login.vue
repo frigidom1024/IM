@@ -61,7 +61,7 @@ async function submit() {
     } else {
       console.log('开始登录...')
       await userStore.login(form.username, form.password)
-      console.log('登录成功，跳转...', userStore.token, userStore.user)
+      console.log('登录成功，跳转...')
       window.location.href = '/'
     }
   } catch (e) {

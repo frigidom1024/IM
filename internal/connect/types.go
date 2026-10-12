@@ -1,5 +1,7 @@
 package connect
 
+import "strings"
+
 // AuthData 认证数据
 type AuthData struct {
 	Token string `json:"token"`
@@ -36,7 +38,7 @@ func (c *ChatMsgData) Validate() error {
 	default:
 		return ErrInvalidMsgType
 	}
-	if c.Content == "" {
+	if strings.TrimSpace(c.Content) == "" {
 		return ErrEmptyContent
 	}
 	if c.ToID > 0 && c.GroupID > 0 {

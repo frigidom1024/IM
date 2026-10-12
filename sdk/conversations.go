@@ -12,15 +12,23 @@ import (
 
 // Conversation is a viewer's private or group conversation and preferences.
 type Conversation struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Avatar        string     `json:"avatar"`
-	UnreadCount   int64      `json:"unread_count"`
-	LastMessage   *Message   `json:"last_message"`
-	LastMessageAt *time.Time `json:"last_message_at"`
-	Pinned        bool       `json:"pinned"`
-	Muted         bool       `json:"muted"`
-	Draft         string     `json:"draft"`
+	SendPolicy     string     `json:"send_policy"`
+	IntroRemaining int        `json:"intro_remaining"`
+	AddedByMe      bool       `json:"added_by_me"`
+	AddedByPeer    bool       `json:"added_by_peer"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Avatar         string     `json:"avatar"`
+	UnreadCount    int64      `json:"unread_count"`
+	LastMessage    *Message   `json:"last_message"`
+	LastMessageAt  *time.Time `json:"last_message_at"`
+	Pinned         bool       `json:"pinned"`
+	Muted          bool       `json:"muted"`
+	Draft          string     `json:"draft"`
+}
+
+func (c *Client) OpenConversation(ctx context.Context, scope string) error {
+	return c.doAuthenticated(ctx, http.MethodPost, "/api/conversation/"+url.PathEscape(scope)+"/open", nil, nil)
 }
 
 // ConversationPatch uses pointers to distinguish omitted values from false/empty.

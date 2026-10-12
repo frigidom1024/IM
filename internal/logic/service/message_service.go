@@ -32,7 +32,7 @@ func NewMessageService(
 
 // Send 发送消息
 func (s *MessageService) Send(msg *model.Message) error {
-	return s.messageRepo.Create(msg)
+	return s.SendWithUnread(msg, nil)
 }
 
 // SendWithUnread persists a message and all affected unread summaries atomically.
@@ -54,6 +54,12 @@ func (s *MessageService) SendWithUnread(msg *model.Message, targets []model.Unre
 		}
 	}
 	return mysql.Client.Transaction(func(tx *gorm.DB) error {
+		if msg.GroupID == 0 {
+			if err := enforcePrivateSend(tx, msg); err != nil {
+				return err
+			}
+			targets = []model.UnreadTarget{{UserID: msg.ToID, FromID: msg.FromID}}
+		}
 		if msg.GroupID > 0 {
 			var group model.Group
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, msg.GroupID).Error; err != nil {

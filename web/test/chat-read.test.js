@@ -8,7 +8,7 @@ const bundle = await build({ stdin: { resolveDir: fileURLToPath(new URL('..', im
 export { createPinia, setActivePinia } from 'pinia';
 export { useChatStore } from './src/stores/chat.js';
 export { useUserStore } from './src/stores/user.js';
-export { messageApi } from './src/api/user.js';
+export { messageApi, conversationApi } from './src/api/user.js';
 export { wsClient } from './src/api/ws.js';
 ` }, bundle: true, platform: 'node', format: 'esm', write: false, external: ['axios'] })
 // A file URL provides Node's normal dependency resolution for axios.
@@ -24,6 +24,7 @@ function setup() {
   const user = app.useUserStore(); user.user = { id: 1, nickname: 'Alice' }
   app.wsClient.handlers = {}
   app.wsClient.send = () => true
+  app.conversationApi.open = async () => ({ code: 0 })
   return app.useChatStore()
 }
 
@@ -76,7 +77,7 @@ test('messages arriving during a read request trigger a serialized follow-up ack
   const acknowledgements = []
   app.messageApi.markRead = () => new Promise(resolve => acknowledgements.push(resolve))
   const opening = store.openChat(2, 'Bob')
-  await Promise.resolve()
+  for (let i = 0; i < 10 && !acknowledgements.length; i++) await Promise.resolve()
   app.wsClient._emit('msg', { data: { from_id: 2, type: 'text', content: 'arrived during request' } })
   assert.equal(acknowledgements.length, 1, 'same scope must not issue parallel requests')
   acknowledgements[0]({ code: 0 })

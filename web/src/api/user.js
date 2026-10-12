@@ -11,12 +11,17 @@ export const userApi = {
 }
 
 export const friendApi = {
+	getIncoming: () => http.get('/friend/incoming'),
+	readNotice: id => http.post(`/friend/${id}/notice/read`),
   getList: () => http.get('/friend/list'),
   add: (data) => http.post('/friend/add', data),
   remove: (friendId) => http.delete(`/friend/${friendId}`)
 }
 
 export const groupApi = {
+	getMyApplications: params => http.get('/group/applications/mine', { params }),
+	getApplications: (id, params) => http.get(`/group/${id}/applications`, { params }),
+	reviewApplication: (id, applicationId, decision, reason = '') => http.post(`/group/${id}/applications/${applicationId}/review`, { decision, reason }),
   getList: () => http.get('/group/list'),
   create: (data) => http.post('/group/create', data),
   join: (groupId) => http.post(`/group/${groupId}/join`),
@@ -41,6 +46,7 @@ export const messageApi = {
 }
 
 export const conversationApi = {
+	open: scope => http.post(`/conversation/${encodeURIComponent(scope)}/open`),
   getList: params => http.get('/conversation', { params }),
   update: (scope, patch) => http.patch(`/conversation/${encodeURIComponent(scope)}`, patch)
 }

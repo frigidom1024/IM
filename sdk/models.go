@@ -48,11 +48,13 @@ type UpdateStatusRequest struct {
 
 // Friend is a directed friend relation.
 type Friend struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
-	FriendID  int64     `json:"friend_id"`
-	Remark    string    `json:"remark"`
-	CreatedAt time.Time `json:"created_at"`
+	AddedByPeer     bool       `json:"added_by_peer"`
+	RecipientSeenAt *time.Time `json:"recipient_seen_at"`
+	ID              int64      `json:"id"`
+	UserID          int64      `json:"user_id"`
+	FriendID        int64      `json:"friend_id"`
+	Remark          string     `json:"remark"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // AddFriendRequest creates a friend relation.
@@ -61,8 +63,11 @@ type AddFriendRequest struct {
 	Remark   string `json:"remark"`
 }
 
-// Group represents a group conversation.
+// Group represents a group and the viewer's membership, independently of a conversation.
 type Group struct {
+	MemberCount  int64     `json:"member_count"`
+	PendingCount int64     `json:"pending_count"`
+	Role         int8      `json:"role"`
 	Announcement string    `json:"announcement"`
 	ID           int64     `json:"id"`
 	Name         string    `json:"name"`

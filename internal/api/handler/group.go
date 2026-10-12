@@ -23,10 +23,15 @@ const (
 type GroupHandler struct {
 	groupService *service.GroupService
 	admin        service.GroupAdminService
+	notify       Notify
 }
 
-func NewGroupHandler(g registry.GroupRepository, m registry.GroupMemberRepository) *GroupHandler {
-	return &GroupHandler{groupService: service.NewGroupService(g, m)}
+func NewGroupHandler(g registry.GroupRepository, m registry.GroupMemberRepository, notifications ...Notify) *GroupHandler {
+	h := &GroupHandler{groupService: service.NewGroupService(g, m)}
+	if len(notifications) > 0 {
+		h.notify = notifications[0]
+	}
+	return h
 }
 func groupResult(c *gin.Context, data any, err error) {
 	if err == nil {
@@ -92,9 +97,12 @@ func (h *GroupHandler) Create(c *gin.Context) {
 	}
 	group, err := h.admin.Create(req.Name, req.Avatar, user, req.MaxMembers)
 	groupResult(c, group, err)
+	if err == nil {
+		h.notifyGroup(group.ID, user)
+	}
 }
 func (h *GroupHandler) GetList(c *gin.Context) {
-	groups, err := h.groupService.GetByUser(c.GetInt64("userID"))
+	groups, err := h.admin.ListGroups(c.GetInt64("userID"))
 	groupResult(c, groups, err)
 }
 func (h *GroupHandler) GetMembers(c *gin.Context) {
@@ -112,13 +120,66 @@ func (h *GroupHandler) GetMembers(c *gin.Context) {
 func (h *GroupHandler) Join(c *gin.Context) {
 	id, user, ok := groupScope(c)
 	if ok {
-		groupResult(c, nil, h.admin.Join(id, user))
+		application, err := h.admin.Apply(id, user)
+		groupResult(c, application, err)
+		if err == nil {
+			h.notifyGroup(id, user)
+		}
+	}
+}
+
+func (h *GroupHandler) MyApplications(c *gin.Context) {
+	limit, offset, ok := groupPage(c)
+	if !ok {
+		return
+	}
+	items, err := h.admin.MyApplications(c.GetInt64("userID"), limit, offset)
+	groupResult(c, items, err)
+}
+func (h *GroupHandler) Applications(c *gin.Context) {
+	id, user, ok := groupScope(c)
+	if !ok {
+		return
+	}
+	limit, offset, ok := groupPage(c)
+	if !ok {
+		return
+	}
+	items, err := h.admin.Applications(id, user, limit, offset)
+	groupResult(c, items, err)
+}
+func (h *GroupHandler) Review(c *gin.Context) {
+	id, user, ok := groupScope(c)
+	if !ok {
+		return
+	}
+	requestID, err := strconv.ParseInt(c.Param("applicationId"), 10, 64)
+	if err != nil || requestID <= 0 {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return
+	}
+	var req struct {
+		Decision string `json:"decision"`
+		Reason   string `json:"reason"`
+	}
+	if c.ShouldBindJSON(&req) != nil {
+		groupResult(c, nil, service.ErrGroupInvalid)
+		return
+	}
+	item, err := h.admin.Review(id, user, requestID, req.Decision, strings.TrimSpace(req.Reason))
+	groupResult(c, item, err)
+	if err == nil {
+		h.notifyGroup(id, item.UserID)
 	}
 }
 func (h *GroupHandler) Leave(c *gin.Context) {
 	id, user, ok := groupScope(c)
 	if ok {
-		groupResult(c, nil, h.admin.Remove(id, user, user))
+		err := h.admin.Remove(id, user, user)
+		groupResult(c, nil, err)
+		if err == nil {
+			h.notifyGroup(id, user)
+		}
 	}
 }
 func (h *GroupHandler) RemoveMember(c *gin.Context) {
@@ -131,7 +192,11 @@ func (h *GroupHandler) RemoveMember(c *gin.Context) {
 		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
-	groupResult(c, nil, h.admin.Remove(id, user, target))
+	err = h.admin.Remove(id, user, target)
+	groupResult(c, nil, err)
+	if err == nil {
+		h.notifyGroup(id, target)
+	}
 }
 func (h *GroupHandler) Search(c *gin.Context) {
 	limit, offset, ok := groupPage(c)
@@ -153,7 +218,11 @@ func (h *GroupHandler) Invite(c *gin.Context) {
 		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
-	groupResult(c, nil, h.admin.Invite(id, user, req.UserID))
+	err := h.admin.Invite(id, user, req.UserID)
+	groupResult(c, nil, err)
+	if err == nil {
+		h.notifyGroup(id, req.UserID)
+	}
 }
 func (h *GroupHandler) Transfer(c *gin.Context) {
 	id, user, ok := groupScope(c)
@@ -167,7 +236,11 @@ func (h *GroupHandler) Transfer(c *gin.Context) {
 		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
-	groupResult(c, nil, h.admin.Transfer(id, user, req.UserID))
+	err := h.admin.Transfer(id, user, req.UserID)
+	groupResult(c, nil, err)
+	if err == nil {
+		h.notifyGroup(id, user, req.UserID)
+	}
 }
 func (h *GroupHandler) Announcement(c *gin.Context) {
 	id, user, ok := groupScope(c)
@@ -203,12 +276,31 @@ func (h *GroupHandler) UpdateMember(c *gin.Context) {
 		groupResult(c, nil, service.ErrGroupInvalid)
 		return
 	}
-	groupResult(c, nil, h.admin.UpdateMember(id, user, target, req.Nickname, req.MutedUntil, req.Unmute || req.MutedUntil != nil, req.Role))
+	err = h.admin.UpdateMember(id, user, target, req.Nickname, req.MutedUntil, req.Unmute || req.MutedUntil != nil, req.Role)
+	groupResult(c, nil, err)
+	if err == nil {
+		h.notifyGroup(id, target)
+	}
 }
 func (h *GroupHandler) Dissolve(c *gin.Context) {
 	id, user, ok := groupScope(c)
 	if ok {
-		groupResult(c, nil, h.admin.Dissolve(id, user))
+		var recipients []int64
+		members, _ := h.groupService.GetMembers(id)
+		for _, member := range members {
+			recipients = append(recipients, member.UserID)
+		}
+		requests, _ := h.admin.Applications(id, user, 1000000, 0)
+		for _, request := range requests {
+			if request.Status == "pending" {
+				recipients = append(recipients, request.UserID)
+			}
+		}
+		err := h.admin.Dissolve(id, user)
+		groupResult(c, nil, err)
+		if err == nil {
+			h.notify.send("group_changed", gin.H{"group_id": id}, recipients...)
+		}
 	}
 }
 func (h *GroupHandler) Receipts(c *gin.Context) {

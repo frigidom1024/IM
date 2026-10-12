@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	stdErrors "errors"
 	"strconv"
 	"time"
 
@@ -120,18 +121,24 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 			}
 		}
 		logger.Error("保存消息和未读摘要失败", zap.String("userID", userID), zap.Error(err))
-		SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsSendFailed, "消息发送失败"))
+		var business *errors.Error
+		if stdErrors.As(err, &business) {
+			SendError(h.connSvr, userID, msg.Seq(), business)
+		} else {
+			SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsSendFailed, "消息发送失败"))
+		}
 		return err
 	}
 
 	telemetry.Default.MessagePersisted(true)
 	logger.Debug("消息处理成功", zap.String("userID", userID), zap.Int64("messageID", msgModel.ID))
 	h.sendMsgAck(userID, msg.Seq(), msgModel.ID, false)
+	delivery := connect.NewRawMessage(connect.CmdMsg, msg.Seq(), map[string]any{"id": strconv.FormatInt(msgModel.ID, 10), "from_id": senderID, "to_id": msgModel.ToID, "group_id": msgModel.GroupID, "type": msgModel.MsgType, "content": msgModel.Content, "created_at": msgModel.CreatedAt})
 	if msgModel.ToID > 0 {
-		h.forwardToUser(strconv.FormatInt(msgModel.ToID, 10), msg)
+		h.forwardToUser(strconv.FormatInt(msgModel.ToID, 10), delivery)
 	}
 	if msgModel.GroupID > 0 {
-		h.broadcastToGroup(msgModel.GroupID, groupMembers, msg, userID)
+		h.broadcastToGroup(msgModel.GroupID, groupMembers, delivery, userID)
 	}
 	return nil
 }

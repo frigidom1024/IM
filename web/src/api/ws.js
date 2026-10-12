@@ -73,12 +73,13 @@ class WsClient {
     return false
   }
 
-  sendChat(fromId, toId, content, msgType = 'text', groupId = 0) {
+  sendChat(fromId, toId, content, msgType = 'text', groupId = 0, seq = crypto.randomUUID()) {
     this.send({
       cmd: 'msg',
-      seq: crypto.randomUUID(),
+      seq,
       data: { from_id: fromId, to_id: groupId > 0 ? 0 : toId, group_id: groupId, type: msgType, content }
     })
+    return seq
   }
 
   ping() {

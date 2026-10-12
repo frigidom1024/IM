@@ -16,6 +16,7 @@ import (
 // MessageWithSender 消息 + 发送者信息
 type MessageWithSender struct {
 	ID          int64  `json:"id"`
+	IDString    string `json:"id_string"`
 	FromID      int64  `json:"from_id"`
 	ToID        int64  `json:"to_id"`
 	GroupID     int64  `json:"group_id"`
@@ -34,6 +35,7 @@ func enrichMessages(msgs []*model.Message, userRepo registry.UserRepository) []M
 	for _, m := range msgs {
 		info := &MessageWithSender{
 			ID:        m.ID,
+			IDString:  strconv.FormatInt(m.ID, 10),
 			FromID:    m.FromID,
 			ToID:      m.ToID,
 			GroupID:   m.GroupID,

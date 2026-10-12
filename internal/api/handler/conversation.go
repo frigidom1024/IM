@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"gochat/internal/logic/model"
+	"gochat/internal/logic/service"
 	apierrors "gochat/internal/pkg/errors"
 	"gochat/internal/pkg/mysql"
 	"gorm.io/gorm/clause"
@@ -91,12 +92,11 @@ func ListConversations(c *gin.Context) {
 		return
 	}
 	userID := c.GetInt64("userID")
-	// Union includes outgoing-only conversations, friends, joined groups and drafts.
+	// Only messages and explicitly opened scopes create conversations.
 	// The group membership join also removes scopes after the viewer leaves a group.
 	query := "WITH scopes AS (" +
 		"SELECT CONCAT('private:',IF(from_id=?,to_id,from_id)) scope FROM message WHERE group_id=0 AND (from_id=? OR to_id=?) " +
-		"UNION SELECT CONCAT('private:',friend_id) FROM friend WHERE user_id=? " +
-		"UNION SELECT CONCAT('group:',group_id) FROM group_member WHERE user_id=? " +
+		"UNION SELECT CONCAT('group:',m.group_id) FROM message m JOIN group_member gm ON gm.group_id=m.group_id WHERE m.group_id>0 AND gm.user_id=? " +
 		"UNION SELECT scope FROM conversation_preference WHERE user_id=?), " +
 		"ranked AS (SELECT m.*,IF(group_id>0,CONCAT('group:',group_id),CONCAT('private:',IF(from_id=?,to_id,from_id))) scope," +
 		"ROW_NUMBER() OVER (PARTITION BY IF(group_id>0,CONCAT('group:',group_id),CONCAT('private:',IF(from_id=?,to_id,from_id))) ORDER BY created_at DESC,id DESC) rn " +
@@ -110,7 +110,7 @@ func ListConversations(c *gin.Context) {
 		"LEFT JOIN `group` g ON s.scope=CONCAT('group:',g.id) " +
 		"LEFT JOIN group_member gm ON gm.group_id=g.id AND gm.user_id=? " +
 		"LEFT JOIN unread_count uc ON uc.user_id=? AND s.scope=IF(uc.group_id>0,CONCAT('group:',uc.group_id),CONCAT('private:',uc.from_id)) " +
-		"WHERE (u.id IS NOT NULL OR gm.user_id IS NOT NULL) ORDER BY pinned DESC,r.created_at DESC,r.id DESC,s.scope LIMIT ? OFFSET ?"
+		"WHERE (u.id IS NOT NULL OR gm.user_id IS NOT NULL) ORDER BY pinned DESC,COALESCE(r.created_at,p.updated_at) DESC,r.id DESC,s.scope LIMIT ? OFFSET ?"
 	var rows []struct {
 		Scope, Name, Avatar, Draft string
 		UnreadCount                int64
@@ -121,7 +121,7 @@ func ListConversations(c *gin.Context) {
 		IsRevoked                  bool
 		CreatedAt                  *time.Time
 	}
-	err = mysql.Client.WithContext(c.Request.Context()).Raw(query, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, limit, offset).Scan(&rows).Error
+	err = mysql.Client.WithContext(c.Request.Context()).Raw(query, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, limit, offset).Scan(&rows).Error
 	if err != nil {
 		apierrors.RespondError(c, apierrors.New(apierrors.CodeServerError, "读取会话失败"))
 		return
@@ -129,6 +129,20 @@ func ListConversations(c *gin.Context) {
 	result := make([]model.Conversation, 0, len(rows))
 	for _, r := range rows {
 		item := model.Conversation{ID: r.Scope, Name: r.Name, Avatar: r.Avatar, UnreadCount: r.UnreadCount, Pinned: r.Pinned, Muted: r.Muted, Draft: r.Draft, LastMessageAt: r.CreatedAt}
+		kind, id, _ := ParseConversationScope(r.Scope)
+		if kind == "private" {
+			policy, policyErr := service.ReadPrivatePolicy(mysql.Client, userID, id)
+			if policyErr != nil {
+				apierrors.RespondError(c, apierrors.New(apierrors.CodeServerError, "读取发送权限失败"))
+				return
+			}
+			item.SendPolicy = policy.SendPolicy
+			item.IntroRemaining = policy.IntroRemaining
+			item.AddedByMe = policy.AddedByMe
+			item.AddedByPeer = policy.AddedByPeer
+		} else {
+			item.SendPolicy = service.SendUnrestricted
+		}
 		if r.MessageID != nil && r.CreatedAt != nil {
 			item.LastMessage = &model.Message{ID: *r.MessageID, FromID: r.FromID, ToID: r.ToID, GroupID: r.GroupID, MsgType: r.MsgType, Content: r.Content, IsRevoked: r.IsRevoked, CreatedAt: *r.CreatedAt}
 			if r.IsRevoked {
@@ -138,4 +152,35 @@ func ListConversations(c *gin.Context) {
 		result = append(result, item)
 	}
 	apierrors.RespondOK(c, result)
+}
+
+func OpenConversation(c *gin.Context) {
+	kind, id, err := ParseConversationScope(c.Param("scope"))
+	if err != nil {
+		apierrors.RespondBadRequest(c, err.Error())
+		return
+	}
+	user := c.GetInt64("userID")
+	var count int64
+	db := mysql.Client.WithContext(c.Request.Context())
+	if kind == "group" {
+		err = db.Model(&model.GroupMember{}).Joins("JOIN `group` g ON g.id=group_member.group_id").Where("group_id=? AND user_id=?", id, user).Count(&count).Error
+	} else {
+		err = db.Model(&model.User{}).Where("id=? AND id<>?", id, user).Count(&count).Error
+	}
+	if err != nil {
+		apierrors.RespondError(c, apierrors.New(apierrors.CodeServerError, "打开会话失败"))
+		return
+	}
+	if count == 0 {
+		apierrors.RespondError(c, apierrors.New(apierrors.CodeForbidden, "无权访问会话"))
+		return
+	}
+	row := model.ConversationPreference{UserID: user, Scope: c.Param("scope"), UpdatedAt: time.Now()}
+	err = db.Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"updated_at"})}).Create(&row).Error
+	if err != nil {
+		apierrors.RespondError(c, apierrors.New(apierrors.CodeServerError, "打开会话失败"))
+		return
+	}
+	apierrors.RespondOK(c, row)
 }

@@ -14,6 +14,9 @@ type Group struct {
 	MaxMembers   int       `gorm:"column:max_members;default:500" json:"max_members"`
 	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	MemberCount  int64     `gorm:"->;-:migration" json:"member_count"`
+	PendingCount int64     `gorm:"->;-:migration" json:"pending_count"`
+	Role         int8      `gorm:"->;-:migration" json:"role"`
 }
 
 // TableName 指定表名

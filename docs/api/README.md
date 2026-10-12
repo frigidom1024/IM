@@ -10,6 +10,12 @@ The route contract test constructs routers in both authentication modes and chec
 
 ## WebSocket contract
 
+The UI separates messages (private and group conversations), friends (directed relationships and notices), and groups (membership/applications). Adding a friend or joining an empty group does not create a conversation; receiving/sending messages or `POST /api/conversation/:scope/open` does. Private `send_policy` values are `unavailable`, `text_once`, `unrestricted`. Single-direction friends may send exactly one text until mutual; removing/readding/revoking does not reset it. Friend notices are distinct from message unread counts.
+
+`POST /api/group/:groupId/join` returns a pending application, never immediate membership. Owner/admin invites still add members directly. Application states are `pending`, `approved`, `rejected`, `closed`; the current owner reviews with `{decision:"approve"|"reject", reason?:string}`. A rejected applicant may reapply; duplicate pending submissions return the existing application. Full groups reject approval with409 without consuming the pending request. Group transfer moves review authority and dissolution closes pending requests.
+
+Server invalidation frames `friend_changed` and `group_changed` tell clients to reload relationships, notices, applications and conversations. Delivery is best-effort; durable HTTP state recovers notifications after reconnect. Delivered `msg` data additionally includes the persisted decimal-string `id` and `created_at`; `from_id` comes from authenticated identity. History includes exact `id_string` alongside its legacy numeric `id`.
+
 WebSocket traffic uses the `server.connect_addr` listener, `GET /ws`. Its standalone liveness endpoint is `GET /health`. Authenticate the upgrade with `Authorization: Bearer <GoChat JWT>`; a `token` query parameter is supported for compatible clients. Prefer the header to keep tokens out of proxy URL logs. An invalid/missing token returns HTTP 401 with the error envelope before upgrading. A new connection for the same user replaces the old connection. No in-band `auth` command is required.
 
 Frames are JSON objects with `cmd`, optional client `seq`, and command-specific `data`. The server registers `msg`, `msg_read` and `ping`; other command constants do not imply supported handlers. The maximum incoming frame is 4096 bytes, and excess traffic above 30 frames/second per connection is dropped.

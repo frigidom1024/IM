@@ -15,13 +15,17 @@ type ConversationPreference struct {
 func (ConversationPreference) TableName() string { return "conversation_preference" }
 
 type Conversation struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Avatar        string     `json:"avatar"`
-	UnreadCount   int64      `json:"unread_count"`
-	LastMessage   *Message   `json:"last_message"`
-	LastMessageAt *time.Time `json:"last_message_at"`
-	Pinned        bool       `json:"pinned"`
-	Muted         bool       `json:"muted"`
-	Draft         string     `json:"draft"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Avatar         string     `json:"avatar"`
+	UnreadCount    int64      `json:"unread_count"`
+	LastMessage    *Message   `json:"last_message"`
+	LastMessageAt  *time.Time `json:"last_message_at"`
+	Pinned         bool       `json:"pinned"`
+	Muted          bool       `json:"muted"`
+	Draft          string     `json:"draft"`
+	SendPolicy     string     `json:"send_policy"`
+	IntroRemaining int        `json:"intro_remaining"`
+	AddedByMe      bool       `json:"added_by_me"`
+	AddedByPeer    bool       `json:"added_by_peer"`
 }

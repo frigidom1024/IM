@@ -73,8 +73,8 @@ func NewRouter(
 	})
 
 	userHandler := handler.NewUserHandler(userRepo)
-	friendHandler := handler.NewFriendHandler(friendRepo)
-	groupHandler := handler.NewGroupHandler(groupRepo, groupMemberRepo)
+	friendHandler := handler.NewFriendHandler(friendRepo, opts.notify)
+	groupHandler := handler.NewGroupHandler(groupRepo, groupMemberRepo, opts.notify)
 	messageHandler := handler.NewMessageHandler(messageRepo, messageReadRepo, userRepo)
 	uploadHandler := handler.NewUploadHandler(minioClient)
 
@@ -94,6 +94,7 @@ func NewRouter(
 		protected.Use(middleware.AuthMiddleware())
 		{
 			protected.GET("/conversation", handler.ListConversations)
+			protected.POST("/conversation/:scope/open", handler.OpenConversation)
 			protected.PATCH("/conversation/:scope", handler.UpdateConversation)
 			user := protected.Group("/user")
 			user.GET("/info/:id", userHandler.GetInfo)
@@ -102,11 +103,16 @@ func NewRouter(
 
 			friend := protected.Group("/friend")
 			friend.GET("/list", friendHandler.GetList)
+			friend.GET("/incoming", friendHandler.Incoming)
+			friend.POST("/:friendId/notice/read", friendHandler.ReadNotice)
 			friend.POST("/add", friendHandler.Add)
 			friend.DELETE("/:friendId", friendHandler.Remove)
 
 			group := protected.Group("/group")
 			group.GET("/list", groupHandler.GetList)
+			group.GET("/applications/mine", groupHandler.MyApplications)
+			group.GET("/:groupId/applications", groupHandler.Applications)
+			group.POST("/:groupId/applications/:applicationId/review", groupHandler.Review)
 			group.POST("/create", groupHandler.Create)
 			group.GET("/search", groupHandler.Search)
 			group.POST("/:groupId/invite", groupHandler.Invite)

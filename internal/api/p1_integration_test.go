@@ -42,7 +42,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 	previous := mysql.Client
 	mysql.Client = db
 	defer func() { mysql.Client = previous; sqlDB, _ := db.DB(); sqlDB.Close() }()
-	if err = db.AutoMigrate(&model.User{}, &model.Friend{}, &model.Group{}, &model.GroupMember{}, &model.Message{}, &model.UnreadCount{}, &model.ConversationPreference{}, &model.UploadSession{}, &model.MediaAsset{}, &model.MessageAsset{}); err != nil {
+	if err = db.AutoMigrate(&model.User{}, &model.Friend{}, &model.PrivatePair{}, &model.Group{}, &model.GroupMember{}, &model.GroupApplication{}, &model.Message{}, &model.UnreadCount{}, &model.ConversationPreference{}, &model.UploadSession{}, &model.MediaAsset{}, &model.MessageAsset{}); err != nil {
 		t.Fatal(err)
 	}
 	if err = logger.Init("error", "stdout"); err != nil {
@@ -56,7 +56,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 		}
 	}
 	defer func() {
-		for _, table := range []string{"message_asset", "media_asset", "upload_session", "conversation_preference", "unread_count", "message", "group_member", "group", "friend", "user"} {
+		for _, table := range []string{"message_asset", "media_asset", "upload_session", "conversation_preference", "unread_count", "message", "group_application", "group_member", "group", "friend", "private_pair", "user"} {
 			db.Exec("DELETE FROM `" + table + "`")
 		}
 	}()
@@ -105,6 +105,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 		}
 		return data
 	}
+	request("POST", "/api/conversation/group:9201/open", token1, "", nil, nil, 200)
 	data := request("GET", "/api/conversation", token1, "", nil, nil, 200)
 	var list struct{ Data []model.Conversation }
 	if err = json.Unmarshal(data, &list); err != nil {
@@ -158,6 +159,8 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws := connect.NewWsConnServer()
+	request("POST", "/api/friend/add", token1, "application/json", strings.NewReader(`{"friend_id":9102}`), nil, 200)
+	request("POST", "/api/friend/add", token2, "application/json", strings.NewReader(`{"friend_id":9101}`), nil, 200)
 	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(service.NewMessageService(registry.NewMessageRepository(), registry.NewMessageReadRepository()), service.NewGroupService(registry.NewGroupRepository(), registry.NewGroupMemberRepository()), ws))
 	wsServer := httptest.NewServer(http.HandlerFunc(ws.HandleWebSocket))
 	defer wsServer.Close()

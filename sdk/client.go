@@ -169,9 +169,17 @@ func (c *Client) CreateGroup(ctx context.Context, request CreateGroupRequest) (*
 	return &response, err
 }
 
-// JoinGroup adds the current user to a group.
+// JoinGroup submits an application and returns ErrGroupApprovalPending while
+// waiting for approval. Deprecated: use ApplyToGroup to inspect the result.
 func (c *Client) JoinGroup(ctx context.Context, groupID int64) error {
-	return c.doAuthenticated(ctx, http.MethodPost, "/api/group/"+strconv.FormatInt(groupID, 10)+"/join", nil, nil)
+	application, err := c.ApplyToGroup(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	if application.Status == "pending" {
+		return ErrGroupApprovalPending
+	}
+	return nil
 }
 
 // LeaveGroup removes the current user from a group.

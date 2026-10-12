@@ -28,6 +28,8 @@ try {
   }
   node (Join-Path $PSScriptRoot 'p1-e2e.mjs')
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  node (Join-Path $PSScriptRoot 'relationships-e2e.mjs')
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   $sdkEnvironment = @{}
   foreach ($key in @('GOCHAT_URL', 'GOCHAT_WS_URL', 'GOCHAT_EXTERNAL_TOKEN')) {
     $sdkEnvironment[$key] = [Environment]::GetEnvironmentVariable($key)

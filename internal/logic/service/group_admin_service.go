@@ -85,17 +85,8 @@ func (s GroupAdminService) change(groupID, actor int64, fn func(*gorm.DB, *model
 }
 
 func (s GroupAdminService) Join(groupID, userID int64) error {
-	db, err := groupDB()
-	if err != nil {
-		return err
-	}
-	return db.Transaction(func(tx *gorm.DB) error {
-		var group model.Group
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, groupID).Error; err != nil {
-			return err
-		}
-		return addGroupMember(tx, &group, userID)
-	})
+	_, err := s.Apply(groupID, userID)
+	return err
 }
 
 func addGroupMember(tx *gorm.DB, group *model.Group, userID int64) error {
@@ -127,7 +118,10 @@ func (s GroupAdminService) Invite(groupID, actor, target int64) error {
 		if m.Role < model.RoleAdmin {
 			return ErrGroupForbidden
 		}
-		return addGroupMember(tx, g, target)
+		if err := addGroupMember(tx, g, target); err != nil {
+			return err
+		}
+		return tx.Model(&model.GroupApplication{}).Where("group_id=? AND user_id=? AND status='pending'", groupID, target).Updates(map[string]any{"status": "approved", "handled_by": actor, "handled_at": time.Now(), "reason": "邀请入群"}).Error
 	})
 }
 
@@ -223,6 +217,9 @@ func (s GroupAdminService) Dissolve(groupID, actor int64) error {
 	return s.change(groupID, actor, func(tx *gorm.DB, g *model.Group, m *model.GroupMember) error {
 		if g.OwnerID != actor || m.Role != model.RoleOwner {
 			return ErrGroupForbidden
+		}
+		if err := tx.Model(&model.GroupApplication{}).Where("group_id=? AND status='pending'", groupID).Updates(map[string]any{"status": "closed", "reason": "群组已解散", "handled_by": actor, "handled_at": time.Now()}).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("group_id = ?", groupID).Delete(&model.GroupMember{}).Error; err != nil {
 			return err

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "GoChat HTTP API",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Single-instance GoChat P1 HTTP contract. This document includes builtin and external authentication routes; only the configured mode is registered. Most API responses use code/message/data. IDs retain their existing numeric/string wire forms. WebSocket /ws uses a separate listener and contract in docs/api/README.md."
   },
   "servers": [
@@ -686,7 +686,7 @@
       "get": {
         "operationId": "GET__api_conversation",
         "summary": "List own conversations",
-        "description": "Includes sent-only chats, friends, joined groups and saved drafts. Pinned first, then latest message. Group scopes disappear after leaving.",
+        "description": "Private and group messages plus explicitly opened scopes. Friend/group relationships alone do not create empty conversations. Private send_policy is authoritative; group membership controls visibility.",
         "tags": [
           "conversation"
         ],
@@ -1610,8 +1610,8 @@
     "/api/group/{groupId}/join": {
       "post": {
         "operationId": "POST__api_group__groupId__join",
-        "summary": "Join group",
-        "description": "Serialized with capacity/membership changes. Existing membership is idempotent.",
+        "summary": "Apply to join a group",
+        "description": "Returns pending application, not membership. Duplicate pending submissions return the same application. Only the current owner can approve; owner/admin invitations remain immediate.",
         "tags": [
           "group"
         ],
@@ -1626,7 +1626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Response26"
+                  "$ref": "#/components/schemas/GroupApplicationResponse"
                 }
               }
             }
@@ -3011,6 +3011,283 @@
           }
         ]
       }
+    },
+    "/api/conversation/{scope}/open": {
+      "post": {
+        "operationId": "POST__api_conversation__scope__open",
+        "summary": "Open a conversation without changing relationships or drafts",
+        "tags": [
+          "conversation"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenConversationResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/friend/incoming": {
+      "get": {
+        "operationId": "GET__api_friend_incoming",
+        "summary": "List received friend-addition notices",
+        "tags": [
+          "friend"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FriendNoticesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": []
+      }
+    },
+    "/api/friend/{friendId}/notice/read": {
+      "post": {
+        "operationId": "POST__api_friend__friendId__notice_read",
+        "summary": "Acknowledge a received friend notice",
+        "tags": [
+          "friend"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyRelationshipResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "friendId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
+      }
+    },
+    "/api/group/applications/mine": {
+      "get": {
+        "operationId": "GET__api_group_applications_mine",
+        "summary": "List my group applications and their results",
+        "tags": [
+          "group"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupApplicationsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ]
+      }
+    },
+    "/api/group/{groupId}/applications": {
+      "get": {
+        "operationId": "GET__api_group__groupId__applications",
+        "summary": "Owner lists group applications",
+        "tags": [
+          "group"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupApplicationsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ]
+      }
+    },
+    "/api/group/{groupId}/applications/{applicationId}/review": {
+      "post": {
+        "operationId": "POST__api_group__groupId__applications__applicationId__review",
+        "summary": "Current owner approves or rejects an application",
+        "tags": [
+          "group"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupApplicationResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "applicationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupApplicationReview"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3180,6 +3457,14 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "added_by_peer": {
+            "type": "boolean"
+          },
+          "recipient_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "required": [
@@ -3223,6 +3508,22 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "member_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pending_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "role": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ]
           }
         },
         "required": [
@@ -3468,6 +3769,25 @@
           },
           "draft": {
             "type": "string"
+          },
+          "send_policy": {
+            "type": "string",
+            "enum": [
+              "unavailable",
+              "text_once",
+              "unrestricted"
+            ]
+          },
+          "intro_remaining": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "added_by_me": {
+            "type": "boolean"
+          },
+          "added_by_peer": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -3479,7 +3799,11 @@
           "last_message_at",
           "pinned",
           "muted",
-          "draft"
+          "draft",
+          "send_policy",
+          "intro_remaining",
+          "added_by_me",
+          "added_by_peer"
         ]
       },
       "UnreadEntry": {
@@ -4912,6 +5236,249 @@
               "$ref": "#/components/schemas/FileMeta"
             },
             "nullable": false
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "FriendNotice": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "avatar": {
+            "type": "string"
+          },
+          "unread": {
+            "type": "boolean"
+          },
+          "added_by_me": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "avatar",
+          "unread",
+          "added_by_me",
+          "created_at"
+        ]
+      },
+      "GroupApplication": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "group_name": {
+            "type": "string"
+          },
+          "applicant_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "closed"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "handled_by": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "handled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "group_id",
+          "user_id",
+          "group_name",
+          "applicant_name",
+          "status",
+          "reason",
+          "handled_by",
+          "created_at",
+          "handled_at"
+        ]
+      },
+      "GroupApplicationReview": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "ConversationPreference": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "draft": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "pinned",
+          "muted",
+          "draft",
+          "updated_at"
+        ]
+      },
+      "FriendNoticesResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FriendNotice"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "GroupApplicationsResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupApplication"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "GroupApplicationResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/GroupApplication"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "OpenConversationResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ConversationPreference"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data"
+        ]
+      },
+      "EmptyRelationshipResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "nullable": true
           }
         },
         "required": [

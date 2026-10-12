@@ -21,6 +21,8 @@ type externalUser struct {
 var users = map[string]externalUser{
 	"demo-alice": {ID: "external-alice", Name: "Alice"},
 	"demo-bob":   {ID: "external-bob", Name: "Bob"},
+	"demo-rel-a": {ID: "external-rel-a", Name: "Relationship A"},
+	"demo-rel-b": {ID: "external-rel-b", Name: "Relationship B"},
 }
 
 //go:embed public/index.html

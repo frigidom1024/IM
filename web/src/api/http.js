@@ -18,6 +18,7 @@ http.interceptors.request.use(config => {
 http.interceptors.response.use(
   res => ['blob', 'arraybuffer'].includes(res.config.responseType) ? res : res.data,
   err => {
+    if (err.response?.data?.message) err.message = err.response.data.message
     if (err.response?.status === 401) {
       localStorage.removeItem('token')
       localStorage.removeItem('user')

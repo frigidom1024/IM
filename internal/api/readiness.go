@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"gochat/internal/api/handler"
 	"time"
 )
 
@@ -10,6 +11,11 @@ type RouterOption func(*routerOptions)
 type routerOptions struct {
 	timeout time.Duration
 	checks  map[string]DependencyCheck
+	notify  handler.Notify
+}
+
+func WithRealtimeNotifier(notify handler.Notify) RouterOption {
+	return func(o *routerOptions) { o.notify = notify }
 }
 
 // WithDependencyChecks adds bounded dependency checks. A nil check explicitly

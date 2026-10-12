@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -107,6 +108,7 @@ func New(cfg *config.Config) (*Application, error) {
 			return err
 		}
 	}
+	app.wsServer = newWebSocketServer(messageService, groupService)
 	app.apiServer = api.NewRouter(
 		userRepo,
 		friendRepo,
@@ -122,8 +124,16 @@ func New(cfg *config.Config) (*Application, error) {
 		cfg.CORS.AllowedOrigins,
 		app.IsReady,
 		api.WithDependencyChecks(2*time.Second, checks),
+		api.WithRealtimeNotifier(func(command string, data any, users ...int64) {
+			seen := map[int64]bool{}
+			for _, user := range users {
+				if user > 0 && !seen[user] {
+					seen[user] = true
+					_ = app.wsServer.Send(strconv.FormatInt(user, 10), connect.NewRawMessage(command, "", data))
+				}
+			}
+		}),
 	)
-	app.wsServer = newWebSocketServer(messageService, groupService)
 	return app, nil
 }
 

@@ -9,6 +9,51 @@ export const useUserStore = defineStore('user', () => {
   const friends = ref([])
   const friendMap = ref({})
   const groups = ref([])
+  const profiles = ref({})
+  const incomingFriends = ref([])
+  const myApplications = ref([])
+  const relationError = ref('')
+  const friendNoticeCount = computed(() => incomingFriends.value.filter(item => item.unread).length)
+  const pendingGroupCount = computed(() => groups.value.reduce((n, group) => n + (group.pending_count || 0), 0))
+
+  async function loadProfile(id) {
+    if (profiles.value[id]) return profiles.value[id]
+    const tokenAtStart = token.value
+    try {
+      const result = await userApi.getInfo(id)
+      if (result.code === 0 && token.value === tokenAtStart) profiles.value = { ...profiles.value, [id]: result.data }
+    } catch {}
+    return profiles.value[id]
+  }
+
+  async function loadNotices() {
+    const auth = token.value
+    try {
+      const res = await friendApi.getIncoming()
+      if (res.code === 0 && token.value === auth) incomingFriends.value = res.data || []
+    } catch (error) { relationError.value = error.message }
+  }
+  async function loadApplications() {
+    const auth = token.value
+    try {
+      const rows = []; let offset = 0
+      for (;;) {
+        const res = await groupApi.getMyApplications({ limit: 100, offset })
+        if (res.code !== 0 || token.value !== auth) return
+        rows.push(...(res.data || [])); if ((res.data || []).length < 100) break
+        offset += 100
+      }
+      if (token.value === auth) myApplications.value = rows
+    } catch (error) { relationError.value = error.message }
+  }
+  async function refreshRelations() {
+    if (!token.value) return
+    relationError.value = ''
+    await Promise.all([loadFriends(), loadGroups(), loadNotices(), loadApplications()])
+  }
+  wsClient.on('friend_changed', () => { if (token.value) { loadFriends(); loadNotices() } })
+  wsClient.on('group_changed', () => { if (token.value) { loadGroups(); loadApplications() } })
+  wsClient.on('open', refreshRelations)
 
   const isLoggedIn = computed(() => !!token.value)
   const myId = computed(() => user.value?.id || 0)
@@ -22,8 +67,7 @@ export const useUserStore = defineStore('user', () => {
     localStorage.setItem('token', res.data.token)
     localStorage.setItem('user', JSON.stringify(res.data.user))
     wsClient.connect(res.data.token)
-    loadFriends()
-    loadGroups()
+    refreshRelations()
   }
 
   async function externalAuth(externalToken) {
@@ -37,7 +81,7 @@ export const useUserStore = defineStore('user', () => {
     localStorage.setItem('token', res.data.token)
     localStorage.setItem('user', JSON.stringify(res.data.user))
     wsClient.connect(res.data.token)
-    loadFriends()
+    refreshRelations()
   }
 
   async function register(username, password, nickname) {
@@ -46,9 +90,10 @@ export const useUserStore = defineStore('user', () => {
   }
 
   async function loadFriends() {
+    const auth = token.value
     try {
       const res = await friendApi.getList()
-      if (res.code === 0) {
+      if (res.code === 0 && token.value === auth) {
         friends.value = res.data || []
         const map = {}
         for (const f of friends.value) {
@@ -61,18 +106,19 @@ export const useUserStore = defineStore('user', () => {
             map[f.friend_id] = { id: f.friend_id, nickname: '用户 ' + f.friend_id }
           }
         }
-        friendMap.value = map
+        if (token.value === auth) { friendMap.value = map; profiles.value = { ...profiles.value, ...map } }
       }
-    } catch (e) { console.error('loadFriends:', e) }
+    } catch (e) { if (token.value === auth) relationError.value = e.message }
   }
 
   // ====== 群组 ======
 
   async function loadGroups() {
+    const auth = token.value
     try {
       const res = await groupApi.getList()
-      if (res.code === 0) groups.value = res.data || []
-    } catch (e) { console.error('loadGroups:', e) }
+      if (res.code === 0 && token.value === auth) groups.value = res.data || []
+    } catch (e) { if (token.value === auth) relationError.value = e.message }
   }
 
   async function createGroup(name, maxMembers = 200) {
@@ -85,7 +131,8 @@ export const useUserStore = defineStore('user', () => {
   async function joinGroup(groupId) {
     const res = await groupApi.join(groupId)
     if (res.code !== 0) throw new Error(res.message)
-    await loadGroups()
+    await loadApplications()
+    return res.data
   }
 
   async function leaveGroup(groupId) {
@@ -108,7 +155,18 @@ export const useUserStore = defineStore('user', () => {
   async function addFriend(friendId) {
     const res = await friendApi.add({ friend_id: friendId })
     if (res.code !== 0) throw new Error(res.message)
-    await loadFriends()
+    await Promise.all([loadFriends(), loadNotices()])
+  }
+
+  async function removeFriend(id) {
+    const res = await friendApi.remove(id)
+    if (res.code !== 0) throw new Error(res.message)
+    await Promise.all([loadFriends(), loadNotices()])
+  }
+  async function readFriendNotice(id) {
+    const res = await friendApi.readNotice(id)
+    if (res.code !== 0) throw new Error(res.message)
+    await loadNotices()
   }
 
   function logout() {
@@ -118,14 +176,14 @@ export const useUserStore = defineStore('user', () => {
     friends.value = []
     friendMap.value = {}
     groups.value = []
+    profiles.value = {}; incomingFriends.value = []; myApplications.value = []; relationError.value = ''
     localStorage.removeItem('token')
     localStorage.removeItem('user')
   }
 
   if (token.value) {
     wsClient.connect(token.value)
-    loadFriends()
-    loadGroups()
+    refreshRelations()
   }
 
   return {
@@ -134,5 +192,7 @@ export const useUserStore = defineStore('user', () => {
     login, register, externalAuth, loadFriends, addFriend, logout,
     loadGroups, createGroup, joinGroup, leaveGroup,
     getGroupMembers, removeMember
+    , profiles, loadProfile, incomingFriends, myApplications, friendNoticeCount, pendingGroupCount,
+    loadNotices, loadApplications, refreshRelations, removeFriend, readFriendNotice, relationError
   }
 })

@@ -40,7 +40,7 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 	previous := mysql.Client
 	mysql.Client = db
 	t.Cleanup(func() { mysql.Client = previous; sqlDB, _ := db.DB(); _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&model.User{}, &model.Group{}, &model.GroupMember{}, &model.Message{}, &model.UnreadCount{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Group{}, &model.GroupMember{}, &model.GroupApplication{}, &model.Message{}, &model.UnreadCount{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := logger.Init("error", "stdout"); err != nil {
@@ -120,7 +120,9 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 	call(0, "POST", groupPath+"/transfer", map[string]any{"user_id": users[3].ID}, 404)
 	call(0, "PATCH", fmt.Sprintf("%s/members/%d", groupPath, users[1].ID), map[string]any{"role": 1}, 200)
 	call(1, "POST", groupPath+"/invite", map[string]any{"user_id": users[2].ID}, 200)
-	call(3, "POST", groupPath+"/join", nil, 409)
+	var fullApplication model.GroupApplication
+	json.Unmarshal(call(3, "POST", groupPath+"/join", nil, 200), &fullApplication)
+	call(0, "POST", fmt.Sprintf("%s/applications/%d/review", groupPath, fullApplication.ID), map[string]string{"decision": "approve"}, 409)
 	call(1, "PUT", groupPath+"/announcement", map[string]any{"announcement": "hello team"}, 200)
 	call(1, "PATCH", fmt.Sprintf("%s/members/%d", groupPath, users[0].ID), map[string]any{"muted_until": time.Now().Add(time.Hour).UTC()}, 403)
 	call(1, "DELETE", fmt.Sprintf("%s/members/%d", groupPath, users[0].ID), nil, 403)
@@ -253,9 +255,12 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 	})
 	statuses := make(chan int, 3)
 	for _, user := range []int{1, 2, 3} {
-		go func(user int) {
-			req, _ := http.NewRequest("POST", httpServer.URL+limitedPath+"/join", nil)
-			req.Header.Set("Authorization", "Bearer "+tokens[user])
+		var application model.GroupApplication
+		json.Unmarshal(call(user, "POST", limitedPath+"/join", nil, 200), &application)
+		go func(applicationID int64) {
+			req, _ := http.NewRequest("POST", fmt.Sprintf("%s%s/applications/%d/review", httpServer.URL, limitedPath, applicationID), strings.NewReader(`{"decision":"approve"}`))
+			req.Header.Set("Authorization", "Bearer "+tokens[0])
+			req.Header.Set("Content-Type", "application/json")
 			response, err := http.DefaultClient.Do(req)
 			if err != nil {
 				statuses <- 0
@@ -264,7 +269,7 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 			_, _ = io.Copy(io.Discard, response.Body)
 			response.Body.Close()
 			statuses <- response.StatusCode
-		}(user)
+		}(application.ID)
 	}
 	success, full := 0, 0
 	for range 3 {

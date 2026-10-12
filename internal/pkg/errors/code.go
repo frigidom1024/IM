@@ -27,12 +27,15 @@ const (
 
 // 消息模块 420xx
 const (
-	CodeMsgInvalid    = 42001 // 消息类型无效
-	CodeMsgEmpty      = 42002 // 消息内容为空
-	CodeMsgTarget     = 42003 // 消息目标无效
-	CodeMsgSendFailed = 42004 // 消息发送失败
-	CodeMsgNotFound   = 42005 // 消息不存在
-	CodeMsgReadFailed = 42006 // 消息已读失败
+	CodeMsgInvalid            = 42001 // 消息类型无效
+	CodeMsgEmpty              = 42002 // 消息内容为空
+	CodeMsgTarget             = 42003 // 消息目标无效
+	CodeMsgSendFailed         = 42004 // 消息发送失败
+	CodeMsgNotFound           = 42005 // 消息不存在
+	CodeMsgReadFailed         = 42006 // 消息已读失败
+	CodePrivateFriendRequired = 42010
+	CodePrivateTextOnly       = 42011
+	CodePrivateIntroUsed      = 42012
 )
 
 // 上传模块 430xx

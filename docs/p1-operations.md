@@ -9,6 +9,7 @@ P1 保持单实例架构，增加 Go SDK 产品化、运维指标、OpenAPI、�
 ```powershell
 Get-Content gochat/mysql/migrations/003_p1_conversations_media.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
 Get-Content gochat/mysql/migrations/004_p1_groups.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
+Get-Content gochat/mysql/migrations/005_relationships_applications.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
 ```
 
 004 的 ALTER 只能执行一次，先检查 `group.announcement` 和 `group_member.nickname` 等列。大表 ALTER 应在维护窗口执行。003 新增会话偏好、上传会话、资产和可信消息附件引用表。004 增加群公告、成员昵称、禁言和已读游标，并以 owner_id 修复旧角色：普通成员=0、管理员=1、群主=2。无法可靠区分的旧角色不会自动提升管理员，需要群主重新授权。
@@ -19,7 +20,13 @@ Get-Content gochat/mysql/migrations/004_p1_groups.sql | docker exec -i <mysql-co
 
 ## 会话与群管理
 
-`GET /api/conversation?limit=50&offset=0` 返回私聊、当前加入的群、好友和保存草稿的会话；包括只有发出消息的私聊。以 `private:<user_id>` 或 `group:<group_id>` 标识，会话置顶、免打扰和草稿只影响当前用户。PATCH 使用可选字段，传 false 或空字符串可以清除偏好。
+`GET /api/conversation?limit=50&offset=0` 返回有消息或已主动打开的私信与群聊。好友、群成员关系本身不创建空会话；`POST /api/conversation/:scope/open` 持久化打开状态且保留草稿。以 `private:<user_id>` 或 `group:<group_id>` 标识，置顶、免打扰和草稿只影响当前用户。PATCH 使用可选字段，传 false 或空字符串可以清除偏好。
+
+005 为好友增加接收方通知已读时间，新增永久保留的私信额度与入群申请记录。升级时历史已有发送记录的方向视为首次额度已使用，互加好友正常发送不受影响。005 的 ALTER 只执行一次；先备份数据库并停止旧应用写入，再迁移并启动新后端与前端。旧应用不执行新权限规则，不应在迁移后继续提供写入服务。
+
+单向添加允许一条文本，互加后支持所有现有消息类型。删除、重加、撤回不恢复额度。额度、好友关系变更和发送事务在同一用户对上串行化；WS 错误码 42010/42011/42012 分别表示未添加、只能发文本、首次额度已使用。
+
+主动入群的 `/join` 现在返回待审核申请，不直接授予成员身份。群主和管理员邀请保持立即入群。只有当前群主能批准或拒绝；满员批准返回409并保留申请。Go SDK 使用 `ApplyToGroup` 返回申请，旧 `JoinGroup` 保留签名但返回 `ErrGroupApprovalPending`，避免误认为已入群。`friend_changed`、`group_changed` 是事务提交后的刷新通知，客户端在登录和重连时重新查询持久化状态。
 
 群管理提供搜索、邀请、公告、昵称、禁言、角色管理、转让和解散。管理员不能修改群主或同级管理员；群主退出前必须转让或解散。群成员列表及回执支持 limit/offset。群禁言与成员身份在入库事务中再次校验。`message/read` 的群 message_id 是已读游标，可使用十进制字符串避免 JavaScript 整数精度问题；省略时清除当前群会话未读。
 
