@@ -107,6 +107,7 @@ GitHub Actions 会自动执行：
 
 - [产品定位](docs/PRODUCT.md)
 - [数据库设计](docs/database.md)
+- [数据库迁移命令与升级流程](docs/database-migrations.md)
 - [WebSocket 协议](docs/websocket.md)
 - [外部系统集成指南](docs/integration.md)
 - [外部集成 E2E 演示](examples/external-integration-demo/README.md)

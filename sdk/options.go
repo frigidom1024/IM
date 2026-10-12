@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+// WithWebSocketHeartbeatInterval sets the automatic protocol ping interval.
+// The default is 30 seconds. Zero or a negative interval disables heartbeats.
+func WithWebSocketHeartbeatInterval(interval time.Duration) Option {
+	return func(c *Client) { c.websocketHeartbeatInterval = interval }
+}
+
 // WithReadRetry enables at most five retries for bodyless GET requests after
 // transport failures or HTTP 429/502/503/504. Writes are never replayed.
 func WithReadRetry(retries int, delay time.Duration) Option {

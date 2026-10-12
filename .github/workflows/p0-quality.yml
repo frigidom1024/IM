@@ -95,6 +95,11 @@ jobs:
           docker exec -e MYSQL_PWD=root gochat-integration-mysql mysql -uroot -e "CREATE DATABASE IF NOT EXISTS gochat_relations_e2e; GRANT ALL ON gochat_relations_e2e.* TO 'gochat'@'%';"
           go test -race ./internal/api/... ./internal/connect/handler/...
 
+      - name: Test database migrations against isolated schemas
+        env:
+          GOCHAT_MIGRATION_TEST_DSN: 'root:root@tcp(127.0.0.1:13306)/'
+        run: go test -race -v ./internal/pkg/migration ./cmd/im-migrate -count=1
+
       - name: Dump service logs on failure
         if: failure()
         working-directory: examples/external-integration-demo

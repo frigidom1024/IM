@@ -26,7 +26,8 @@ func WithWebSocketHeader(key, value string) WSOption {
 }
 
 // WebSocketClient is a typed client for GoChat's WebSocket protocol. Receive
-// automatically reconnects after an unexpected disconnect. Send never retries
+// automatically reconnects after an unexpected disconnect. Automatic protocol
+// pings keep idle connections active until Close is called. Send never retries
 // the failed message automatically; callers can safely retry with the same
 // seq so the server-side idempotency contract prevents duplicates.
 type WebSocketClient struct {
@@ -36,6 +37,7 @@ type WebSocketClient struct {
 	tokenProvider func(context.Context) (string, error)
 	lifetime      context.Context
 	cancel        context.CancelFunc
+	heartbeatDone chan struct{}
 	reconnectMu   sync.Mutex
 	conn          *websocket.Conn
 	endpoint      string
@@ -80,19 +82,46 @@ func (c *Client) ConnectWebSocket(ctx context.Context, options ...WSOption) (*We
 		tokenProvider = c.authToken
 	}
 	lifetime, cancel := context.WithCancel(context.Background())
-	return &WebSocketClient{
+	client := &WebSocketClient{
 		tokenProvider: tokenProvider,
 		lifetime:      lifetime,
 		cancel:        cancel,
+		heartbeatDone: make(chan struct{}),
 		conn:          conn,
 		endpoint:      endpoint,
 		headers:       cloneHeader(headers),
-	}, nil
+	}
+	if c.websocketHeartbeatInterval > 0 {
+		go client.heartbeat(c.websocketHeartbeatInterval)
+	} else {
+		close(client.heartbeatDone)
+	}
+	return client, nil
+}
+
+func (c *WebSocketClient) heartbeat(interval time.Duration) {
+	defer close(c.heartbeatDone)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.lifetime.Done():
+			return
+		case <-ticker.C:
+			// Use the same writer and reconnect path as application messages.
+			// Bound heartbeat writes so a stalled peer cannot block them forever.
+			_ = c.send(WSMessage{Cmd: "ping"}, 5*time.Second)
+		}
+	}
 }
 
 // Send writes a raw protocol message. If the write fails, the SDK reconnects
 // but returns the error without replaying the message.
 func (c *WebSocketClient) Send(message WSMessage) error {
+	return c.send(message, 0)
+}
+
+func (c *WebSocketClient) send(message WSMessage, timeout time.Duration) error {
 	if c == nil {
 		return errors.New("gochat sdk: websocket is not connected")
 	}
@@ -102,7 +131,17 @@ func (c *WebSocketClient) Send(message WSMessage) error {
 	if err != nil {
 		return err
 	}
-	if err := conn.WriteJSON(message); err != nil {
+	if timeout > 0 {
+		if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+			_ = c.reconnectFrom(conn)
+			return err
+		}
+	}
+	err = conn.WriteJSON(message)
+	if timeout > 0 {
+		_ = conn.SetWriteDeadline(time.Time{})
+	}
+	if err != nil {
 		_ = c.reconnectFrom(conn)
 		return err
 	}
@@ -164,7 +203,7 @@ func (c *WebSocketClient) Reconnect(ctx context.Context) error {
 	return c.reconnect(ctx)
 }
 
-// Close closes the WebSocket connection and disables automatic reconnect.
+// Close closes the WebSocket connection and stops heartbeats and automatic reconnect.
 func (c *WebSocketClient) Close() error {
 	if c == nil {
 		return nil
@@ -172,6 +211,9 @@ func (c *WebSocketClient) Close() error {
 	c.connMu.Lock()
 	if c.closed {
 		c.connMu.Unlock()
+		if c.heartbeatDone != nil {
+			<-c.heartbeatDone
+		}
 		return nil
 	}
 	c.closed = true
@@ -181,10 +223,14 @@ func (c *WebSocketClient) Close() error {
 	conn := c.conn
 	c.conn = nil
 	c.connMu.Unlock()
-	if conn == nil {
-		return nil
+	var err error
+	if conn != nil {
+		err = conn.Close()
 	}
-	return conn.Close()
+	if c.heartbeatDone != nil {
+		<-c.heartbeatDone
+	}
+	return err
 }
 
 func (c *WebSocketClient) connection() (*websocket.Conn, error) {
@@ -218,20 +264,14 @@ func (c *WebSocketClient) isClosed() bool {
 }
 
 func (c *WebSocketClient) reconnectFrom(previous *websocket.Conn) error {
-	c.connMu.RLock()
-	if c.closed {
-		c.connMu.RUnlock()
-		return errors.New("gochat sdk: websocket is closed")
-	}
-	current := c.conn
-	c.connMu.RUnlock()
-	if current != previous && current != nil {
-		return nil
-	}
-	return c.reconnect(c.lifetime)
+	return c.reconnectConnection(c.lifetime, previous)
 }
 
 func (c *WebSocketClient) reconnect(ctx context.Context) error {
+	return c.reconnectConnection(ctx, nil)
+}
+
+func (c *WebSocketClient) reconnectConnection(ctx context.Context, previous *websocket.Conn) error {
 	ctx, cancelLifetime := context.WithCancel(ctx)
 	stop := context.AfterFunc(c.lifetime, cancelLifetime)
 	defer func() { stop(); cancelLifetime() }()
@@ -243,6 +283,12 @@ func (c *WebSocketClient) reconnect(ctx context.Context) error {
 	if c.closed {
 		c.connMu.RUnlock()
 		return errors.New("gochat sdk: websocket is closed")
+	}
+	// A reader and heartbeat may detect the same disconnect concurrently.
+	// Check after acquiring reconnectMu so only one replaces that connection.
+	if previous != nil && c.conn != nil && c.conn != previous {
+		c.connMu.RUnlock()
+		return nil
 	}
 	c.connMu.RUnlock()
 

@@ -14,6 +14,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -tags=etcd -o im-server ./cmd/im-server
 RUN CGO_ENABLED=0 go build -o im-maintenance ./cmd/im-maintenance
+RUN CGO_ENABLED=0 go build -o im-migrate ./cmd/im-migrate
 
 # ===== Run Stage =====
 FROM alpine:3.19
@@ -27,6 +28,7 @@ RUN mkdir -p /app/uploads
 
 COPY --from=builder /build/im-server .
 COPY --from=builder /build/im-maintenance .
+COPY --from=builder /build/im-migrate .
 
 # 配置文件通过外部 volume 挂载
 EXPOSE 8080 7000

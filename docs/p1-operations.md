@@ -4,12 +4,12 @@ P1 保持单实例架构，增加 Go SDK 产品化、运维指标、OpenAPI、�
 
 ## 数据库升级
 
-新 Compose 数据卷依次执行 init.sql、003、004。已有数据库先备份，确认 P0 的 001/002 已执行，再依次执行：
+新 Compose 数据卷依次执行 init.sql、003、004、005。统一升级命令与基线登记见 [数据库迁移](database-migrations.md)。已有数据库先备份，确认 P0 的 001/002 已执行，再依次执行：
 
 ```powershell
-Get-Content gochat/mysql/migrations/003_p1_conversations_media.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
-Get-Content gochat/mysql/migrations/004_p1_groups.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
-Get-Content gochat/mysql/migrations/005_relationships_applications.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
+Get-Content gochat/mysql/migrations/003_p1_conversations_media.up.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
+Get-Content gochat/mysql/migrations/004_p1_groups.up.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
+Get-Content gochat/mysql/migrations/005_relationships_applications.up.sql | docker exec -i <mysql-container> mysql --defaults-extra-file=/run/secrets/mysql-client.cnf <database>
 ```
 
 004 的 ALTER 只能执行一次，先检查 `group.announcement` 和 `group_member.nickname` 等列。大表 ALTER 应在维护窗口执行。003 新增会话偏好、上传会话、资产和可信消息附件引用表。004 增加群公告、成员昵称、禁言和已读游标，并以 owner_id 修复旧角色：普通成员=0、管理员=1、群主=2。无法可靠区分的旧角色不会自动提升管理员，需要群主重新授权。

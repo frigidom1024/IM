@@ -1,6 +1,6 @@
 module example.com/gochat-sdk-integration
 
-go 1.25.7
+go 1.25.11
 
 require gochat v0.0.0
 

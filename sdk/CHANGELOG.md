@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Send automatic WebSocket protocol heartbeats every 30 seconds, with a configurable interval and opt-out.
+- Continue heartbeats across reconnects, stop them on close, and coalesce concurrent reconnects for the same failed connection.
+
 ## 0.2.0 — 2026-10-11
 
 - Add configurable HTTP timeout, custom transport, opt-in bounded GET retries and sanitized request logging.

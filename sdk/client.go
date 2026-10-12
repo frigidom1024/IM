@@ -53,14 +53,15 @@ func WithWebSocketURL(endpoint string) Option {
 
 // Client is a typed client for the GoChat HTTP and WebSocket APIs.
 type Client struct {
-	baseURL      string
-	httpClient   *http.Client
-	auth         *tokenState
-	websocketURL string
-	readRetries  int
-	retryDelay   time.Duration
-	refresh      TokenRefreshFunc
-	logger       Logger
+	baseURL                    string
+	httpClient                 *http.Client
+	auth                       *tokenState
+	websocketURL               string
+	websocketHeartbeatInterval time.Duration
+	readRetries                int
+	retryDelay                 time.Duration
+	refresh                    TokenRefreshFunc
+	logger                     Logger
 }
 
 // NewClient creates a GoChat SDK client.
@@ -78,9 +79,10 @@ func NewClient(baseURL string, options ...Option) (*Client, error) {
 	}
 
 	client := &Client{
-		baseURL:    baseURL,
-		auth:       &tokenState{},
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		baseURL:                    baseURL,
+		auth:                       &tokenState{},
+		httpClient:                 &http.Client{Timeout: 15 * time.Second},
+		websocketHeartbeatInterval: 30 * time.Second,
 	}
 	for _, option := range options {
 		if option != nil {

@@ -125,7 +125,20 @@ mux.Handle("/api/user/info", sdk.NewUserInfoHandler(
 }
 ```
 
-## WebSocket 自动重连
+## WebSocket 自动心跳与重连
+
+`ConnectWebSocket()` 成功后，SDK 默认每 30 秒自动发送协议 `ping`，无需额外启动定时器。心跳和业务消息串行写入；心跳写入超时为 5 秒，失败时使用已有重连逻辑恢复连接。重连后自动心跳继续运行，`Close()` 会停止心跳并取消正在进行的自动重连。
+
+可在创建客户端时调整间隔，传入 `0` 或负值关闭自动心跳：
+
+```go
+client, err := sdk.NewClient(baseURL,
+    sdk.WithToken(token),
+    sdk.WithWebSocketHeartbeatInterval(15*time.Second),
+)
+```
+
+调用方仍应持续调用 `Receive()` 处理业务消息和服务端控制帧。协议 `pong` 响应也由 `Receive()` 返回；手动 `Ping()` 继续可用。
 
 SDK 的 `Receive()` 在遇到临时断线时会自动重新建立连接，最多尝试 5 次并使用退避等待。`Send()` 遇到写入失败时会尝试恢复连接，但不会自动重发原消息；调用方应使用原来的 `seq` 再次发送，利用服务端幂等保证不会产生重复消息。
 
