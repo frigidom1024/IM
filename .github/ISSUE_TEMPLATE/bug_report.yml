@@ -1,0 +1,56 @@
+name: 缺陷报告
+description: 报告可复现的程序、接口或 SDK 问题。
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: 请先搜索已有 Issue，并隐藏 token、密码和私人消息内容。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - HTTP API
+        - WebSocket
+        - 会话、好友或群组
+        - Go SDK
+        - 前端核心库或页面
+        - 数据库迁移
+        - Docker 或部署
+        - 文件与媒体
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本或提交 ID
+      placeholder: "例如：a2394f1"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 操作系统、源码或 Docker 部署、Go/Node/MySQL 版本、builtin 或 external 认证模式。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 最小复现步骤
+      description: 列出调用顺序、必要的请求参数和 HTTP 路径或 WS 命令。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 附上 HTTP 状态、业务错误码、WS 帧或经过脱敏的日志。
+    validations:
+      required: true

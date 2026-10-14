@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 接入与部署指南
+    url: https://github.com/frigidom1024/IM/blob/master/docs/integration.md
+    about: 外部认证、源码和 Docker 部署、前后端 SDK 接入。
+  - name: 领域概念与接口调用流程
+    url: https://github.com/frigidom1024/IM/blob/master/docs/domain.md
+    about: 好友、群组、会话、已读、发送权限和消息重试规则。

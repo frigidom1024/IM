@@ -1,5 +1,9 @@
 # GoChat
 
+[![CI](https://github.com/frigidom1024/IM/actions/workflows/p0-quality.yml/badge.svg?branch=master)](https://github.com/frigidom1024/IM/actions/workflows/p0-quality.yml)
+[![Go](https://img.shields.io/badge/Go-1.25.11-00ADD8?logo=go&logoColor=white)](go.mod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 GoChat 是一个轻量级即时通讯服务，为业务系统提供私信、群聊和会话管理能力。既支持独立使用，也支持接入已有用户体系，通过前端核心库和 Go SDK 集成聊天功能。
 
 ## 核心特点
@@ -10,6 +14,8 @@ GoChat 是一个轻量级即时通讯服务，为业务系统提供私信、群�
 - **关系与权限管理**：支持单向好友、私信发送限制、入群审核、群角色和成员禁言。
 - **消息重试与恢复**：幂等重试避免重复保存，客户端主动补拉历史和通知，恢复断线期间的状态。
 - **文件与媒体**：支持图片、文件、语音和视频，提供对象存储、断点上传与媒体处理。
+
+[接入与部署](docs/integration.md) · [领域与调用流程](docs/domain.md) · [HTTP API](docs/api/README.md) · [WebSocket](docs/websocket.md) · [Go SDK](sdk/README.md)
 
 ## 技术栈
 
@@ -185,6 +191,10 @@ npm run build:app
 - [会话状态归属设计](docs/adr/0001-viewer-owned-conversations.md)
 - [产品定位](docs/PRODUCT.md)
 
+## 贡献
+
+欢迎提交缺陷报告、功能建议和接入问题。开发与 PR 流程见 [贡献指南](CONTRIBUTING.md)，反馈入口见 [Issue 模板](https://github.com/frigidom1024/IM/issues/new/choose)。
+
 ## License
 
-待补充。
+本项目采用 [MIT 许可证](LICENSE)，允许商业使用、修改和分发，使用时保留版权及许可声明。

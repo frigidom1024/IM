@@ -1,0 +1,31 @@
+name: 接入问题
+description: 询问认证、部署、领域规则或 SDK 调用方式。
+title: "[Question] "
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 接入目标与问题
+      description: 说明希望完成的业务流程和遇到的问题。
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本或提交 ID
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: 接入方式
+      description: builtin/external 认证、源码/Docker 部署、前端核心库/Go SDK/直接调用 API。
+    validations:
+      required: true
+  - type: textarea
+    id: calls
+    attributes:
+      label: 已尝试的调用
+      description: 写明 HTTP 方法与路径或 WS 帧、调用顺序和返回结果；隐藏 token、密码及私人消息内容。
+    validations:
+      required: true

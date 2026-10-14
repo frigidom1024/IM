@@ -1,0 +1,27 @@
+name: 功能建议
+description: 提出具体业务场景、接口能力或使用体验的改进。
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 希望解决的问题
+      description: 说明使用者、业务场景和当前的限制。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议的行为
+      description: 如涉及接口，请给出期望的调用流程、请求和结果。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 当前解决方式或其他方案
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: 兼容性与影响
+      description: 是否涉及 SDK、前端、数据库迁移或现有使用者。
