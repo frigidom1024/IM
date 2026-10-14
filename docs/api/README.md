@@ -2,6 +2,8 @@
 
 The canonical HTTP contract is [openapi.json](openapi.json), OpenAPI 3.0.3. It is embedded in the server and available at `GET /openapi.json`; no CDN or external documentation service is required. Import the file into an OpenAPI viewer or client generator. The document includes both builtin and external authentication APIs. The server registers only the configured mode, so requests to the other mode return 404.
 
+For domain concepts, permission rules, and the order of calls in private chat, conversation reads, group applications, uploads, and reconnect recovery, see the [domain and API usage guide](../domain.md).
+
 All protected HTTP APIs require `Authorization: Bearer <GoChat JWT>`. External authentication uses `POST /api/auth` with the external application's token in `Authorization`; its upstream format is passed unchanged. Successful API JSON contains `code: 0`, `message`, and typed `data`. Errors contain a nonzero code, a safe message and `data: null`. File downloads, range errors, metrics and the OpenAPI document retain their native formats. Health responses retain additional top-level status fields. See [runtime operations](../operations/runtime.md) for error codes, readiness and metrics.
 
 Pagination uses `limit` (1–100, default 50) and a nonnegative item `offset`. Group administration/member/search APIs cap offset at 1,000,000. User/group IDs are JSON integers. History enrichment also returns numeric message IDs; conversation `last_message.id`, unread `latest_message_id`, are decimal strings. Use an int64-capable decoder for numeric IDs; JavaScript Number cannot represent every valid ID exactly. WS ACKs retain numeric `message_id` for compatibility and add `message_id_string` for exact decoding in JavaScript.
