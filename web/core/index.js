@@ -22,4 +22,6 @@ export { useUserStore } from '../src/stores/user'
 export { default as http } from '../src/api/http'
 
 export { createMediaCache } from '../src/api/media-cache'
-export { conversationApi, groupApi, messageApi, userApi, friendApi, authApi } from '../src/api/user'
+export { conversationApi, groupApi, userApi, friendApi, authApi } from '../src/api/user'
+
+export { useConversationStore } from '../src/stores/conversation'

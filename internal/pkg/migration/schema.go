@@ -123,6 +123,7 @@ func requirements(version int) map[string]tableRequirement {
 		return keyRequirement{name, fields, unique, since}
 	}
 	r := map[string]tableRequirement{
+		"conversation":            {since: 6, fields: []fieldRequirement{field("from_id:bigint to_id:bigint group_id:bigint last_message_id:bigint last_message_at:datetime unread_count:bigint read_at:datetime pinned:tinyint muted:tinyint draft:text created_at:datetime updated_at:datetime", 6)}, keys: []keyRequirement{pk("from_id,to_id,group_id"), key("idx_conversation_owner_latest", "from_id,pinned,last_message_at", false, 6), key("idx_conversation_group", "group_id,from_id", false, 6)}},
 		"user":                    {fields: []fieldRequirement{field("id:bigint username:varchar32 password:varchar64 nickname:varchar64 avatar:varchar255 status:tinyint created_at:timestamp updated_at:timestamp", 0)}, keys: []keyRequirement{pk("id"), key("username", "username", true, 0), key("idx_status", "status", false, 0), key("idx_username", "username", false, 0)}},
 		"friend":                  {fields: []fieldRequirement{field("id:bigint user_id:bigint friend_id:bigint remark:varchar64 created_at:timestamp", 0), field("recipient_seen_at:datetime", 5)}, keys: []keyRequirement{pk("id"), key("uk_user_friend", "user_id,friend_id", true, 0), key("idx_user", "user_id", false, 0), key("idx_friend_recipient", "friend_id", false, 5)}},
 		"group":                   {fields: []fieldRequirement{field("id:bigint name:varchar128 avatar:varchar255 owner_id:bigint max_members:int created_at:timestamp updated_at:timestamp", 0), field("announcement:text", 4)}, keys: []keyRequirement{pk("id"), key("idx_owner", "owner_id", false, 0)}},
@@ -210,6 +211,18 @@ func (s schema) validate(version int) error {
 	}
 	if version >= 2 && !s["message"].columns["client_seq"].nullable {
 		return fmt.Errorf("message.client_seq must allow NULL for legacy messages")
+	}
+	if version >= 6 {
+		for _, field := range []string{"from_id", "to_id", "group_id", "unread_count", "pinned", "muted", "draft", "created_at", "updated_at"} {
+			if s["conversation"].columns[field].nullable {
+				return fmt.Errorf("conversation.%s must not allow NULL", field)
+			}
+		}
+		for _, field := range []string{"last_message_id", "last_message_at", "read_at"} {
+			if !s["conversation"].columns[field].nullable {
+				return fmt.Errorf("conversation.%s must allow NULL for empty scopes", field)
+			}
+		}
 	}
 	return nil
 }

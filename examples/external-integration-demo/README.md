@@ -19,7 +19,7 @@
             ├── POST /api/auth
             ├── GET  /api/friend/list
             ├── POST /api/friend/add
-            ├── GET  /api/message/private/:id
+            ├── GET  /api/conversation/{scope}/messages
             └── WS   /ws
 ```
 
@@ -89,3 +89,4 @@ node examples/external-integration-demo/e2e.mjs
 ```powershell
 docker compose -f examples/external-integration-demo/compose.yaml down -v
 ```
+WS 聊天使用 `{conversation_id, type, content}`，私信 scope 为 `private:<对方ID>`；作者身份由认证连接确定。下行包含接收者视角的 `conversation_id` 和字符串 `sender_id`，发送确认携带发送者视角的 scope。连接后不再推送离线通知；页面和 E2E 脚本主动调用 `/api/conversation/unread`，通知与历史通过 HTTP 查询恢复。详见 [WS 协议](../../docs/websocket.md)。

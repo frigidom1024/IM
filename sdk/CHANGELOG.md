@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Change `Receive()` to a continuous `<-chan WSMessage` stream, driven by a single background reader started at connection time.
+- Add `Errors()` for receive/decode/reconnect diagnostics; close both streams and stop I/O on `Close()` or terminal receive failure.
+- Preserve read error causes, avoid reconnecting on malformed JSON frames, and bound repeated immediate disconnects with backoff.
+- Rename the internal connection accessor to `currentConnection()` and keep dialing in explicit connection/reconnect paths.
+
+- Replace the WebSocket three-ID chat payload with `conversation_id`; change `SendChat` to `(conversationID, content, messageType)`.
+- Add recipient-scoped conversation IDs and authenticated string sender IDs to deliveries, and sender-scoped IDs to ACKs.
+- Remove server offline notification pushes; clients query notification and conversation HTTP endpoints.
+- Decode ACK message IDs from exact string IDs and reject conflicting idempotency retries on the server.
+
+- Move history and unread/read APIs to viewer-owned conversation endpoints; `MarkConversationRead(ctx, scope)` clears the whole conversation without a cursor.
+- Remove group message receipts and read cursor fields; add canonical scope IDs to unread summaries.
+- Keep ID-based private/group history and read helpers forwarding to conversation HTTP APIs.
+
 - Send automatic WebSocket protocol heartbeats every 30 seconds, with a configurable interval and opt-out.
 - Continue heartbeats across reconnects, stop them on close, and coalesce concurrent reconnects for the same failed connection.
 

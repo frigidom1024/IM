@@ -25,7 +25,7 @@ import (
 
 const (
 	VersionTable  = "gochat_schema_migrations"
-	LatestVersion = 5
+	LatestVersion = 6
 )
 
 // Open creates a dedicated connection pool. Only mutation commands enable

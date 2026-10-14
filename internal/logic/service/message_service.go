@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"gochat/internal/logic/model"
 	"gochat/internal/logic/registry"
-	"gochat/internal/pkg/mysql"
+	apierrors "gochat/internal/pkg/errors"
 	"strings"
 	"time"
 
@@ -14,29 +14,25 @@ import (
 )
 
 // MessageService 消息服务
-type MessageService struct {
-	messageRepo     registry.MessageRepository
-	messageReadRepo registry.MessageReadRepository
+type MessageService struct{ messageRepo registry.MessageRepository }
+
+func NewMessageService(repo registry.MessageRepository) *MessageService {
+	return &MessageService{messageRepo: repo}
 }
 
-// NewMessageService 创建消息服务实例
-func NewMessageService(
-	messageRepo registry.MessageRepository,
-	messageReadRepo registry.MessageReadRepository,
-) *MessageService {
-	return &MessageService{
-		messageRepo:     messageRepo,
-		messageReadRepo: messageReadRepo,
+// Save persists one authorized message in a caller-owned transaction.
+func (s *MessageService) Save(tx *gorm.DB, msg *model.Message) error {
+	if msg == nil || msg.ID <= 0 || msg.FromID <= 0 || msg.ToID < 0 || msg.GroupID < 0 || (msg.ToID > 0) == (msg.GroupID > 0) || msg.FromID == msg.ToID {
+		return apierrors.New(apierrors.CodeMsgTarget, "无效的消息目标")
 	}
-}
-
-// Send 发送消息
-func (s *MessageService) Send(msg *model.Message) error {
-	return s.SendWithUnread(msg, nil)
-}
-
-// SendWithUnread persists a message and all affected unread summaries atomically.
-func (s *MessageService) SendWithUnread(msg *model.Message, targets []model.UnreadTarget) error {
+	switch msg.MsgType {
+	case model.MsgTypeText, model.MsgTypeMention, model.MsgTypeImage, model.MsgTypeFile, model.MsgTypeVoice, model.MsgTypeVideo:
+	default:
+		return apierrors.New(apierrors.CodeMsgInvalid, "无效的消息类型")
+	}
+	if strings.TrimSpace(msg.Content) == "" {
+		return apierrors.New(apierrors.CodeMsgEmpty, "消息内容不能为空")
+	}
 	var assetID string
 	if msg.MsgType == model.MsgTypeImage || msg.MsgType == model.MsgTypeFile || msg.MsgType == model.MsgTypeVoice || msg.MsgType == model.MsgTypeVideo {
 		var reference struct {
@@ -53,49 +49,41 @@ func (s *MessageService) SendWithUnread(msg *model.Message, targets []model.Unre
 			assetID = parts[0]
 		}
 	}
-	return mysql.Client.Transaction(func(tx *gorm.DB) error {
-		if msg.GroupID == 0 {
-			if err := enforcePrivateSend(tx, msg); err != nil {
-				return err
-			}
-			targets = []model.UnreadTarget{{UserID: msg.ToID, FromID: msg.FromID}}
-		}
-		if msg.GroupID > 0 {
-			var group model.Group
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, msg.GroupID).Error; err != nil {
-				return err
-			}
-			var sender model.GroupMember
-			if err := tx.Where("group_id = ? AND user_id = ?", msg.GroupID, msg.FromID).First(&sender).Error; err != nil {
-				return ErrGroupForbidden
-			}
-			if sender.MutedUntil != nil && sender.MutedUntil.After(time.Now()) {
-				return ErrGroupForbidden
-			}
-			var members []model.GroupMember
-			if err := tx.Where("group_id = ? AND user_id <> ?", msg.GroupID, msg.FromID).Find(&members).Error; err != nil {
-				return err
-			}
-			targets = make([]model.UnreadTarget, 0, len(members))
-			for _, member := range members {
-				targets = append(targets, model.UnreadTarget{UserID: member.UserID, GroupID: msg.GroupID})
-			}
-		}
-		if err := s.messageRepo.CreateWithTx(tx, msg); err != nil {
+
+	if msg.GroupID == 0 {
+		if err := enforcePrivateSend(tx, msg); err != nil {
 			return err
 		}
-		if assetID != "" {
-			if err := tx.Create(&model.MessageAsset{MessageID: msg.ID, AssetID: assetID}).Error; err != nil {
-				return err
-			}
+	}
+	if msg.GroupID > 0 {
+		var group model.Group
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&group, msg.GroupID).Error; err != nil {
+			return err
 		}
-		for _, target := range targets {
-			if err := s.messageReadRepo.IncrUnreadWithTx(tx, target.UserID, target.FromID, target.GroupID, msg); err != nil {
-				return err
-			}
+		var sender model.GroupMember
+		if err := tx.Where("group_id = ? AND user_id = ?", msg.GroupID, msg.FromID).First(&sender).Error; err != nil {
+			return ErrGroupForbidden
 		}
-		return nil
-	})
+		if sender.MutedUntil != nil && sender.MutedUntil.After(time.Now()) {
+			return ErrGroupForbidden
+		}
+	}
+	if err := s.messageRepo.CreateWithTx(tx, msg); err != nil {
+		return err
+	}
+	// MySQL's historical TIMESTAMP column has second precision. Project the
+	// stored timestamp so summary ordering and history use the same tie-break.
+	var stored model.Message
+	if err := tx.Select("created_at").Where("id = ?", msg.ID).First(&stored).Error; err != nil {
+		return err
+	}
+	msg.CreatedAt = stored.CreatedAt
+	if assetID != "" {
+		if err := tx.Create(&model.MessageAsset{MessageID: msg.ID, AssetID: assetID}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetByClientSeq returns the persisted message for a sender retry.
@@ -108,37 +96,7 @@ func (s *MessageService) GetByID(id int64) (*model.Message, error) {
 	return s.messageRepo.GetByID(id)
 }
 
-// GetPrivateMessages 获取私聊消息
-func (s *MessageService) GetPrivateMessages(userID1, userID2 int64, limit int, offset int64) ([]*model.Message, error) {
-	return s.messageRepo.GetPrivateMessages(userID1, userID2, limit, offset)
-}
-
-// GetGroupMessages 获取群聊消息
-func (s *MessageService) GetGroupMessages(groupID int64, limit int, offset int64) ([]*model.Message, error) {
-	return s.messageRepo.GetGroupMessages(groupID, limit, offset)
-}
-
 // Revoke 撤回消息
 func (s *MessageService) Revoke(id int64) error {
 	return s.messageRepo.Revoke(id)
-}
-
-// IncrUnread 增加未读计数
-func (s *MessageService) IncrUnread(userID, fromID, groupID int64, latestMessage *model.Message) error {
-	return s.messageReadRepo.IncrUnread(userID, fromID, groupID, latestMessage)
-}
-
-// GetUnreadCount 获取用户总未读数
-func (s *MessageService) GetUnreadCount(userID int64) (int64, error) {
-	return s.messageReadRepo.GetUnreadCount(userID)
-}
-
-// GetUnreadList 获取用户未读列表
-func (s *MessageService) GetUnreadList(userID int64) ([]*model.UnreadCount, error) {
-	return s.messageReadRepo.GetUnreadList(userID)
-}
-
-// ClearUnread 清除未读计数
-func (s *MessageService) ClearUnread(userID, fromID, groupID int64) error {
-	return s.messageReadRepo.ClearUnread(userID, fromID, groupID)
 }

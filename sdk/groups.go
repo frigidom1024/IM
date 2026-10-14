@@ -42,8 +42,3 @@ func (c *Client) ListGroupMembersPage(ctx context.Context, groupID int64, limit 
 	err := c.doAuthenticated(ctx, http.MethodGet, fmt.Sprintf("/api/group/%d/members?limit=%d&offset=%d", groupID, limit, offset), nil, &result)
 	return result, err
 }
-func (c *Client) ListGroupReadReceipts(ctx context.Context, groupID, messageID int64, limit int, offset int64) ([]GroupMember, error) {
-	var result []GroupMember
-	err := c.doAuthenticated(ctx, http.MethodGet, fmt.Sprintf("/api/group/%d/messages/%d/receipts?limit=%d&offset=%d", groupID, messageID, limit, offset), nil, &result)
-	return result, err
-}

@@ -70,7 +70,7 @@ func groupScope(c *gin.Context) (int64, int64, bool) {
 	return id, user, true
 }
 func groupPage(c *gin.Context) (int, int, bool) {
-	limit, offset, err := parseMessagePage(c)
+	limit, offset, err := parsePage(c)
 	if err != nil || offset > 1000000 {
 		groupResult(c, nil, service.ErrGroupInvalid)
 		return 0, 0, false
@@ -302,21 +302,4 @@ func (h *GroupHandler) Dissolve(c *gin.Context) {
 			h.notify.send("group_changed", gin.H{"group_id": id}, recipients...)
 		}
 	}
-}
-func (h *GroupHandler) Receipts(c *gin.Context) {
-	id, user, ok := groupScope(c)
-	if !ok {
-		return
-	}
-	messageID, err := strconv.ParseInt(c.Param("messageId"), 10, 64)
-	if err != nil || messageID <= 0 {
-		groupResult(c, nil, service.ErrGroupInvalid)
-		return
-	}
-	limit, offset, ok := groupPage(c)
-	if !ok {
-		return
-	}
-	readers, err := h.admin.Receipts(id, user, messageID, limit, offset)
-	groupResult(c, readers, err)
 }

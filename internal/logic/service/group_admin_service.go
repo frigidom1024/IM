@@ -110,7 +110,10 @@ func addGroupMember(tx *gorm.DB, group *model.Group, userID int64) error {
 	if count >= int64(group.MaxMembers) {
 		return ErrGroupFull
 	}
-	return tx.Create(&model.GroupMember{GroupID: group.ID, UserID: userID, Role: model.RoleMember}).Error
+	if err := tx.Create(&model.GroupMember{GroupID: group.ID, UserID: userID, Role: model.RoleMember}).Error; err != nil {
+		return err
+	}
+	return InitializeGroupConversation(tx, group.ID, userID)
 }
 
 func (s GroupAdminService) Invite(groupID, actor, target int64) error {
@@ -137,7 +140,7 @@ func (s GroupAdminService) Remove(groupID, actor, target int64) error {
 		if target != actor && (m.Role < model.RoleAdmin || m.Role <= targetMember.Role) {
 			return ErrGroupForbidden
 		}
-		if err := tx.Where("group_id = ? AND user_id = ?", groupID, target).Delete(&model.UnreadCount{}).Error; err != nil {
+		if err := HideGroupConversations(tx, groupID, target); err != nil {
 			return err
 		}
 		return tx.Delete(&targetMember).Error
@@ -224,7 +227,7 @@ func (s GroupAdminService) Dissolve(groupID, actor int64) error {
 		if err := tx.Where("group_id = ?", groupID).Delete(&model.GroupMember{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("group_id = ?", groupID).Delete(&model.UnreadCount{}).Error; err != nil {
+		if err := HideGroupConversations(tx, groupID, 0); err != nil {
 			return err
 		}
 		return tx.Delete(g).Error
@@ -253,58 +256,4 @@ func (s GroupAdminService) Members(groupID, userID int64, limit, offset int) ([]
 	members := make([]model.GroupMember, 0)
 	err = db.Where("group_id = ?", groupID).Order("role DESC, id ASC").Limit(limit).Offset(offset).Find(&members).Error
 	return members, err
-}
-
-// MarkRead uses the group's serialized state to avoid racing membership changes
-// or message writes. A zero cursor means all messages currently persisted.
-func (s GroupAdminService) MarkRead(groupID, userID, messageID int64) error {
-	if groupID <= 0 || userID <= 0 || messageID < 0 {
-		return ErrGroupInvalid
-	}
-	return s.change(groupID, userID, func(tx *gorm.DB, g *model.Group, m *model.GroupMember) error {
-		var message model.Message
-		if messageID == 0 {
-			err := tx.Where("group_id = ?", groupID).Order("id DESC").First(&message).Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-		} else {
-			if err := tx.Where("id = ? AND group_id = ?", messageID, groupID).First(&message).Error; err != nil {
-				return err
-			}
-		}
-		cursor := message.ID
-		if cursor < m.LastReadMessageID {
-			cursor = m.LastReadMessageID
-		}
-		now := time.Now()
-		if err := tx.Model(m).Updates(map[string]any{"last_read_message_id": cursor, "read_at": now}).Error; err != nil {
-			return err
-		}
-		var unread int64
-		if err := tx.Model(&model.Message{}).Where("group_id = ? AND id > ? AND from_id <> ?", groupID, cursor, userID).Count(&unread).Error; err != nil {
-			return err
-		}
-		return tx.Model(&model.UnreadCount{}).Where("group_id = ? AND user_id = ?", groupID, userID).Updates(map[string]any{"unread_count": unread, "read_at": now}).Error
-	})
-}
-
-func (s GroupAdminService) Receipts(groupID, userID, messageID int64, limit, offset int) ([]model.GroupMember, error) {
-	if _, err := s.Member(groupID, userID); err != nil {
-		return nil, err
-	}
-	db, err := groupDB()
-	if err != nil {
-		return nil, err
-	}
-	var message model.Message
-	if err := db.Where("id = ? AND group_id = ?", messageID, groupID).First(&message).Error; err != nil {
-		return nil, err
-	}
-	readers := make([]model.GroupMember, 0)
-	err = db.Where("group_id = ? AND last_read_message_id >= ?", groupID, messageID).Order("id ASC").Limit(limit).Offset(offset).Find(&readers).Error
-	return readers, err
 }

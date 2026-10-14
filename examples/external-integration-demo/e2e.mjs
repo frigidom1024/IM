@@ -154,7 +154,8 @@ async function main() {
   const aliceSocket = new SocketClient(alice.token, 'Alice');
   const bobSocket = new SocketClient(bob.token, 'Bob');
   await Promise.all([aliceSocket.opened, bobSocket.opened]);
-  console.log('✓ 两个外部用户均已建立 WebSocket 连接');
+  await gochat('/api/conversation/unread', bob.token);
+  console.log('✓ 两个外部用户均已建立 WebSocket 连接并主动获取未读');
 
   const seq = `e2e-${Date.now()}`;
   const content = `integration message ${seq}`;
@@ -162,9 +163,7 @@ async function main() {
     cmd: 'msg',
     seq,
     data: {
-      from_id: alice.user.id,
-      to_id: bob.user.id,
-      group_id: 0,
+      conversation_id: `private:${bob.user.id}`,
       type: 'text',
       content
     }
@@ -173,10 +172,12 @@ async function main() {
   const ack = await aliceSocket.waitFor((message) => message.cmd === 'msg_reply' && message.seq === seq);
   assert(ack.data?.status === 'success', `消息 ACK 失败：${JSON.stringify(ack)}`);
   const delivered = await bobSocket.waitFor((message) => message.cmd === 'msg' && message.data?.content === content);
-  assert(delivered.data.from_id === alice.user.id, '消息发送者 ID 不正确');
-  console.log('✓ WebSocket 私聊消息已投递');
+  assert(delivered.data.sender_id === String(alice.user.id) && delivered.data.conversation_id === `private:${alice.user.id}`, '消息发送者 ID 不正确');
+  const summary = (await gochat('/api/conversation/unread', bob.token)).data;
+  assert(summary.unread_list.some(item => item.id === `private:${alice.user.id}` && item.unread_count >= 1), '主动拉取未读失败');
+  console.log('✓ WebSocket 私聊消息已投递并可通过 HTTP 获取未读');
 
-  const history = await gochat(`/api/message/private/${alice.user.id}`, bob.token);
+  const history = await gochat(`/api/conversation/private:${alice.user.id}/messages`, bob.token);
   assert(history.data.some((message) => message.content === content), '消息未持久化到历史消息接口');
   console.log('✓ 消息可通过历史消息 API 查询');
 

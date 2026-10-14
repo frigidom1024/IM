@@ -73,13 +73,20 @@ func TestBuiltinSDKIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.Close()
-	// Receive has no context parameter; the deadline closes the socket instead.
+	// Cancellation stops consumption and closes the client/streams.
 	stop := context.AfterFunc(ctx, func() { ws.Close() })
 	defer stop()
 	if err = ws.Ping(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = ws.Receive(); err != nil {
-		t.Fatal(err)
+	select {
+	case message, ok := <-ws.Receive():
+		if !ok || message.Cmd != "pong" {
+			t.Fatalf("unexpected receive: %#v, open=%t", message, ok)
+		}
+	case err, ok := <-ws.Errors():
+		t.Fatalf("receive error: %v, open=%t", err, ok)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
 	}
 }

@@ -15,6 +15,7 @@ services:
       - ../../gochat/mysql/migrations/003_p1_conversations_media.up.sql:/docker-entrypoint-initdb.d/03-p1.sql:ro
       - ../../gochat/mysql/migrations/004_p1_groups.up.sql:/docker-entrypoint-initdb.d/04-p1.sql:ro
       - ../../gochat/mysql/migrations/005_relationships_applications.up.sql:/docker-entrypoint-initdb.d/05-relations.sql:ro
+      - ../../gochat/mysql/migrations/006_conversations.up.sql:/docker-entrypoint-initdb.d/06-conversations.sql:ro
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]

@@ -87,15 +87,13 @@ type CreateGroupRequest struct {
 
 // GroupMember represents membership in a group.
 type GroupMember struct {
-	Nickname          string     `json:"nickname"`
-	MutedUntil        *time.Time `json:"muted_until,omitempty"`
-	LastReadMessageID int64      `json:"last_read_message_id,string"`
-	ReadAt            *time.Time `json:"read_at,omitempty"`
-	ID                int64      `json:"id"`
-	GroupID           int64      `json:"group_id"`
-	UserID            int64      `json:"user_id"`
-	Role              int8       `json:"role"`
-	JoinedAt          time.Time  `json:"joined_at"`
+	Nickname   string     `json:"nickname"`
+	MutedUntil *time.Time `json:"muted_until,omitempty"`
+	ID         int64      `json:"id"`
+	GroupID    int64      `json:"group_id"`
+	UserID     int64      `json:"user_id"`
+	Role       int8       `json:"role"`
+	JoinedAt   time.Time  `json:"joined_at"`
 }
 
 // Message is a message returned by the history API.
@@ -113,12 +111,6 @@ type Message struct {
 	SenderID     int64     `json:"sender_id"`
 }
 
-// MarkReadRequest marks one private or group scope as read.
-type MarkReadRequest struct {
-	FromID  int64 `json:"from_id"`
-	GroupID int64 `json:"group_id,omitempty"`
-}
-
 // UnreadCountResponse is returned by the unread count endpoint.
 type UnreadCountResponse struct {
 	Count      int64           `json:"count"`
@@ -127,6 +119,7 @@ type UnreadCountResponse struct {
 
 // UnreadSummary is one private or group unread aggregate.
 type UnreadSummary struct {
+	ID              string     `json:"id"`
 	FromID          int64      `json:"from_id"`
 	GroupID         int64      `json:"group_id"`
 	Count           int64      `json:"count,omitempty"`

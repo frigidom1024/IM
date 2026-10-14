@@ -19,7 +19,6 @@ type MessageRepository interface {
 	GetGroupMessages(groupID int64, limit int, offset int64) ([]*model.Message, error)
 	Revoke(id int64) error
 	GetByUserID(userID int64, limit int, offset int64) ([]*model.Message, error)
-	GetUnreadMessages(userID int64, limit int) ([]*model.Message, error)
 }
 
 // messageRepository 消息仓储默认实现
@@ -69,9 +68,9 @@ func (r *messageRepository) GetByID(id int64) (*model.Message, error) {
 // GetPrivateMessages 获取私聊消息
 func (r *messageRepository) GetPrivateMessages(userID1, userID2 int64, limit int, offset int64) ([]*model.Message, error) {
 	var messages []*model.Message
-	err := mysql.Client.Where("(from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)",
+	err := mysql.Client.Where("group_id = 0 AND ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?))",
 		userID1, userID2, userID2, userID1).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Limit(limit).
 		Offset(int(offset)).
 		Find(&messages).Error
@@ -82,7 +81,7 @@ func (r *messageRepository) GetPrivateMessages(userID1, userID2 int64, limit int
 func (r *messageRepository) GetGroupMessages(groupID int64, limit int, offset int64) ([]*model.Message, error) {
 	var messages []*model.Message
 	err := mysql.Client.Where("group_id = ?", groupID).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Limit(limit).
 		Offset(int(offset)).
 		Find(&messages).Error
@@ -98,19 +97,9 @@ func (r *messageRepository) Revoke(id int64) error {
 func (r *messageRepository) GetByUserID(userID int64, limit int, offset int64) ([]*model.Message, error) {
 	var messages []*model.Message
 	err := mysql.Client.Where("from_id = ?", userID).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Limit(limit).
 		Offset(int(offset)).
-		Find(&messages).Error
-	return messages, err
-}
-
-// GetUnreadMessages 获取用户未读消息
-func (r *messageRepository) GetUnreadMessages(userID int64, limit int) ([]*model.Message, error) {
-	var messages []*model.Message
-	err := mysql.Client.Where("to_id = ? AND id NOT IN (SELECT message_id FROM message_read WHERE user_id = ?)", userID, userID).
-		Order("created_at DESC").
-		Limit(limit).
 		Find(&messages).Error
 	return messages, err
 }

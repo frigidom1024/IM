@@ -47,7 +47,7 @@ async function main() {
     await Promise.all([aliceSocket.opened,bobSocket.opened]);
     async function send(socket,from,to,groupID,content,type='text',expected='msg_reply') {
       const seq=`${label}-${Math.random()}`;
-      socket.socket.send(JSON.stringify({cmd:'msg',seq,data:{from_id:from,to_id:to,group_id:groupID,type,content}}));
+      socket.socket.send(JSON.stringify({cmd:'msg',seq,data:{conversation_id:groupID ? `group:${groupID}` : `private:${to}`,type,content}}));
       return socket.waitFor(message=>message.seq===seq && message.cmd===expected);
     }
     await send(bobSocket,bob.user.id,alice.user.id,0,JSON.stringify(file),'file','error');
@@ -64,9 +64,9 @@ async function main() {
     await send(bobSocket,bob.user.id,0,group.id,'muted','text','error');
     await gochat(gp+'/members/'+bob.user.id,alice.token,json('PATCH',{unmute:true}));
     const ack=await send(aliceSocket,alice.user.id,0,group.id,JSON.stringify(file),'file');
-    await gochat('/api/message/read',bob.token,json('POST',{group_id:group.id,message_id:ack.data.message_id_string}));
-    const receipts=(await gochat(`${gp}/messages/${ack.data.message_id_string}/receipts`,alice.token)).data;
-    assert(receipts.some(member=>member.user_id===bob.user.id),'group read receipt missing');
+    await gochat(`/api/conversation/group:${group.id}/read`,bob.token,{method:'POST'});
+    const unread=(await gochat('/api/conversation/unread',bob.token)).data;
+    assert(!unread.unread_list.some(item=>item.id===`group:${group.id}`),'group unread survived conversation read');
     const files=(await gochat(gp+'/files',bob.token)).data;
     assert(files.some(item=>item.url===file.url),'group-shared file missing from group list');
     const search=(await gochat('/api/group/search?q='+label,bob.token)).data;
@@ -80,7 +80,7 @@ async function main() {
     await gochat(gp+'/transfer',alice.token,json('POST',{user_id:bob.user.id}));
     await expectStatus(gp,alice.token,403,{...json('DELETE',{}),headers:{'Content-Type':'application/json'}});
     await gochat(gp,bob.token,{method:'DELETE'});
-    console.log('✓ 会话偏好隔离，群禁言/回执/文件列表/群主转让/解散闭环通过');
+    console.log('✓ 会话偏好隔离，群禁言/会话已读/文件列表/群主转让/解散闭环通过');
 
     const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64');
     const image=await upload(alice.token,png,'image','image/png','pixel.png');

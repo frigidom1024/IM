@@ -8,6 +8,7 @@ import (
 
 	"gochat/internal/connect"
 	"gochat/internal/logic/model"
+	"gochat/internal/logic/service"
 	"gochat/internal/pkg/errors"
 	"gochat/internal/pkg/logger"
 	"gochat/internal/pkg/snowflake"
@@ -18,13 +19,13 @@ import (
 
 // ChatHandler 聊天消息处理器（处理 CmdMsg）
 type ChatHandler struct {
-	msgSvc   connect.MessageService
+	msgSvc   connect.MessageSender
 	groupSvc connect.GroupService
 	connSvr  connect.ConnServer
 }
 
 // NewChatHandler 创建聊天消息处理器
-func NewChatHandler(msgSvc connect.MessageService, groupSvc connect.GroupService, connSvr connect.ConnServer) *ChatHandler {
+func NewChatHandler(msgSvc connect.MessageSender, groupSvc connect.GroupService, connSvr connect.ConnServer) *ChatHandler {
 	return &ChatHandler{msgSvc: msgSvc, groupSvc: groupSvc, connSvr: connSvr}
 }
 
@@ -51,6 +52,11 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 		logger.Warn("无效的用户ID", zap.String("userID", userID), zap.Error(err))
 		return err
 	}
+	key, err := service.ConversationKey(senderID, chatData.ConversationID)
+	if err != nil {
+		SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsInvalidMsg, "无效的会话标识"))
+		return err
+	}
 	if len(msg.Seq()) > 128 {
 		err := errors.New(errors.CodeWsInvalidMsg, "seq长度不能超过128")
 		SendError(h.connSvr, userID, msg.Seq(), err)
@@ -62,16 +68,15 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 			return lookupErr
 		}
 		if existing != nil {
-			h.sendMsgAck(userID, msg.Seq(), existing.ID, true)
-			return nil
+			return h.ackExisting(userID, msg.Seq(), senderID, chatData, existing)
 		}
 	}
 
 	msgModel := &model.Message{
 		ID:      snowflake.MustNextID(),
 		FromID:  senderID,
-		ToID:    chatData.ToID,
-		GroupID: chatData.GroupID,
+		ToID:    key.ToID,
+		GroupID: key.GroupID,
 		MsgType: chatData.Type,
 		Content: chatData.Content,
 	}
@@ -81,22 +86,12 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 	}
 
 	var groupMembers []*model.GroupMember
-	unreadTargets := make([]model.UnreadTarget, 0, 1)
-	if msgModel.ToID > 0 {
-		unreadTargets = append(unreadTargets, model.UnreadTarget{UserID: msgModel.ToID, FromID: msgModel.FromID})
-	}
 	if msgModel.GroupID > 0 {
 		groupMembers, err = h.groupSvc.GetMembers(msgModel.GroupID)
 		if err != nil {
 			logger.Error("获取群成员失败", zap.Int64("groupID", msgModel.GroupID), zap.Error(err))
 			SendError(h.connSvr, userID, msg.Seq(), errors.New(errors.CodeWsSendFailed, "获取群成员失败"))
 			return err
-		}
-		for _, member := range groupMembers {
-			if member.UserID == senderID {
-				continue
-			}
-			unreadTargets = append(unreadTargets, model.UnreadTarget{UserID: member.UserID, GroupID: msgModel.GroupID})
 		}
 		canSend := false
 		for _, member := range groupMembers {
@@ -112,12 +107,12 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 		}
 	}
 
-	if err := h.msgSvc.SendWithUnread(msgModel, unreadTargets); err != nil {
+	recipients, err := h.msgSvc.Send(msgModel)
+	if err != nil {
 		telemetry.Default.MessagePersisted(false)
 		if msg.Seq() != "" {
 			if existing, lookupErr := h.msgSvc.GetByClientSeq(senderID, msg.Seq()); lookupErr == nil && existing != nil {
-				h.sendMsgAck(userID, msg.Seq(), existing.ID, true)
-				return nil
+				return h.ackExisting(userID, msg.Seq(), senderID, chatData, existing)
 			}
 		}
 		logger.Error("保存消息和未读摘要失败", zap.String("userID", userID), zap.Error(err))
@@ -132,19 +127,37 @@ func (h *ChatHandler) Handle(ctx context.Context, userID string, msg connect.Mes
 
 	telemetry.Default.MessagePersisted(true)
 	logger.Debug("消息处理成功", zap.String("userID", userID), zap.Int64("messageID", msgModel.ID))
-	h.sendMsgAck(userID, msg.Seq(), msgModel.ID, false)
-	delivery := connect.NewRawMessage(connect.CmdMsg, msg.Seq(), map[string]any{"id": strconv.FormatInt(msgModel.ID, 10), "from_id": senderID, "to_id": msgModel.ToID, "group_id": msgModel.GroupID, "type": msgModel.MsgType, "content": msgModel.Content, "created_at": msgModel.CreatedAt})
-	if msgModel.ToID > 0 {
-		h.forwardToUser(strconv.FormatInt(msgModel.ToID, 10), delivery)
-	}
-	if msgModel.GroupID > 0 {
-		h.broadcastToGroup(msgModel.GroupID, groupMembers, delivery, userID)
+	h.sendMsgAck(userID, msg.Seq(), senderID, msgModel, false)
+	for _, recipient := range recipients {
+		delivery := connect.NewRawMessage(connect.CmdMsg, msg.Seq(), map[string]any{
+			"id": strconv.FormatInt(msgModel.ID, 10), "conversation_id": messageScope(msgModel, recipient), "sender_id": strconv.FormatInt(senderID, 10), "type": msgModel.MsgType, "content": msgModel.Content, "created_at": msgModel.CreatedAt,
+		})
+		h.forwardToUser(strconv.FormatInt(recipient, 10), delivery)
 	}
 	return nil
 }
 
-func (h *ChatHandler) sendMsgAck(userID, seq string, messageID int64, duplicate bool) {
-	ackData := map[string]any{"status": "success", "message_id": messageID, "message_id_string": strconv.FormatInt(messageID, 10), "duplicate": duplicate}
+func messageScope(message *model.Message, viewer int64) string {
+	if message.GroupID > 0 {
+		return service.ConversationScope(model.Conversation{GroupID: message.GroupID})
+	}
+	peer := message.FromID
+	if viewer == message.FromID {
+		peer = message.ToID
+	}
+	return service.ConversationScope(model.Conversation{ToID: peer})
+}
+func (h *ChatHandler) ackExisting(userID, seq string, viewer int64, data *connect.ChatMsgData, message *model.Message) error {
+	if messageScope(message, viewer) != data.ConversationID || message.MsgType != data.Type || message.Content != data.Content {
+		err := errors.New(errors.CodeWsInvalidMsg, "seq已用于其他消息，请保留原始会话与内容")
+		SendError(h.connSvr, userID, seq, err)
+		return err
+	}
+	h.sendMsgAck(userID, seq, viewer, message, true)
+	return nil
+}
+func (h *ChatHandler) sendMsgAck(userID, seq string, viewer int64, message *model.Message, duplicate bool) {
+	ackData := map[string]any{"status": "success", "conversation_id": messageScope(message, viewer), "message_id": message.ID, "message_id_string": strconv.FormatInt(message.ID, 10), "duplicate": duplicate}
 	h.connSvr.Send(userID, connect.NewRawMessage(connect.CmdMsgReply, seq, ackData))
 }
 
@@ -152,17 +165,4 @@ func (h *ChatHandler) forwardToUser(userID string, msg connect.Message) {
 	if h.connSvr.IsOnline(userID) {
 		h.connSvr.Send(userID, msg)
 	}
-}
-
-func (h *ChatHandler) broadcastToGroup(groupID int64, members []*model.GroupMember, msg connect.Message, excludeUserID string) {
-	for _, member := range members {
-		memberID := strconv.FormatInt(member.UserID, 10)
-		if memberID == excludeUserID || !h.connSvr.IsOnline(memberID) {
-			continue
-		}
-		if err := h.connSvr.Send(memberID, msg); err != nil {
-			logger.Warn("发送群消息失败", zap.String("userID", memberID), zap.Error(err))
-		}
-	}
-	logger.Debug("群消息广播完成", zap.Int64("groupID", groupID), zap.Int("memberCount", len(members)))
 }

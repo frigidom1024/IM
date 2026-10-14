@@ -31,7 +31,7 @@ func NewRouter(
 	groupRepo registry.GroupRepository,
 	groupMemberRepo registry.GroupMemberRepository,
 	messageRepo registry.MessageRepository,
-	messageReadRepo registry.MessageReadRepository,
+	conversationRepo registry.ConversationRepository,
 	minioClient *minio.Client,
 	authMode string,
 	authExternalAPI string,
@@ -75,7 +75,7 @@ func NewRouter(
 	userHandler := handler.NewUserHandler(userRepo)
 	friendHandler := handler.NewFriendHandler(friendRepo, opts.notify)
 	groupHandler := handler.NewGroupHandler(groupRepo, groupMemberRepo, opts.notify)
-	messageHandler := handler.NewMessageHandler(messageRepo, messageReadRepo, userRepo)
+	conversationHandler := handler.NewConversationHandler(conversationRepo, messageRepo, userRepo)
 	uploadHandler := handler.NewUploadHandler(minioClient)
 
 	apiGroup := engine.Group("/api")
@@ -93,9 +93,12 @@ func NewRouter(
 		protected := apiGroup.Group("")
 		protected.Use(middleware.AuthMiddleware())
 		{
-			protected.GET("/conversation", handler.ListConversations)
-			protected.POST("/conversation/:scope/open", handler.OpenConversation)
-			protected.PATCH("/conversation/:scope", handler.UpdateConversation)
+			protected.GET("/conversation", conversationHandler.List)
+			protected.GET("/conversation/unread", conversationHandler.Unread)
+			protected.POST("/conversation/:scope/read", conversationHandler.MarkRead)
+			protected.GET("/conversation/:scope/messages", conversationHandler.History)
+			protected.POST("/conversation/:scope/open", conversationHandler.Open)
+			protected.PATCH("/conversation/:scope", conversationHandler.Patch)
 			user := protected.Group("/user")
 			user.GET("/info/:id", userHandler.GetInfo)
 			user.PUT("/profile", userHandler.UpdateProfile)
@@ -120,17 +123,10 @@ func NewRouter(
 			group.PUT("/:groupId/announcement", groupHandler.Announcement)
 			group.PATCH("/:groupId/members/:userId", groupHandler.UpdateMember)
 			group.DELETE("/:groupId", groupHandler.Dissolve)
-			group.GET("/:groupId/messages/:messageId/receipts", groupHandler.Receipts)
 			group.POST("/:groupId/join", groupHandler.Join)
 			group.DELETE("/:groupId/leave", groupHandler.Leave)
 			group.GET("/:groupId/members", groupHandler.GetMembers)
 			group.DELETE("/:groupId/members/:userId", groupHandler.RemoveMember)
-
-			message := protected.Group("/message")
-			message.GET("/private/:userId", messageHandler.GetPrivateMessages)
-			message.GET("/group/:groupId", messageHandler.GetGroupMessages)
-			message.POST("/read", messageHandler.MarkRead)
-			message.GET("/unread", messageHandler.GetUnreadCount)
 
 			protected.POST("/upload", uploadHandler.Upload)
 			protected.POST("/upload/session", uploadHandler.CreateSession)

@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -19,12 +20,47 @@ type Conversation struct {
 	ID             string     `json:"id"`
 	Name           string     `json:"name"`
 	Avatar         string     `json:"avatar"`
+	ReadAt         *time.Time `json:"read_at,omitempty"`
 	UnreadCount    int64      `json:"unread_count"`
 	LastMessage    *Message   `json:"last_message"`
 	LastMessageAt  *time.Time `json:"last_message_at"`
 	Pinned         bool       `json:"pinned"`
 	Muted          bool       `json:"muted"`
 	Draft          string     `json:"draft"`
+}
+
+// MarkConversationRead clears the authenticated viewer's whole conversation.
+func (c *Client) MarkConversationRead(ctx context.Context, scope string) error {
+	return c.doAuthenticated(ctx, http.MethodPost, "/api/conversation/"+url.PathEscape(scope)+"/read", nil, nil)
+}
+
+// MarkRead marks a private conversation read using its peer user ID.
+func (c *Client) MarkRead(ctx context.Context, fromID int64) error {
+	return c.MarkReadConversation(ctx, fromID, 0)
+}
+
+// MarkReadConversation preserves the ID-based SDK interface while using the
+// conversation endpoint.
+func (c *Client) MarkReadConversation(ctx context.Context, fromID, groupID int64) error {
+	if groupID > 0 {
+		return c.MarkConversationRead(ctx, fmt.Sprintf("group:%d", groupID))
+	}
+	if groupID < 0 || fromID <= 0 {
+		return errors.New("gochat sdk: invalid conversation")
+	}
+	return c.MarkConversationRead(ctx, fmt.Sprintf("private:%d", fromID))
+}
+
+func (c *Client) GetUnreadCount(ctx context.Context) (int64, error) {
+	response, err := c.GetUnreadSummary(ctx)
+	return response.Count, err
+}
+
+// GetUnreadSummary gets the viewer's unread conversation summaries.
+func (c *Client) GetUnreadSummary(ctx context.Context) (*UnreadCountResponse, error) {
+	var response UnreadCountResponse
+	err := c.doAuthenticated(ctx, http.MethodGet, "/api/conversation/unread", nil, &response)
+	return &response, err
 }
 
 func (c *Client) OpenConversation(ctx context.Context, scope string) error {

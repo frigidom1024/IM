@@ -770,7 +770,24 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Response16"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
                 }
               }
             }
@@ -803,7 +820,7 @@
               "type": "string",
               "pattern": "^(private|group):[1-9][0-9]*$"
             },
-            "description": ""
+            "description": "Viewer-scoped private peer or group ID; owner comes from authentication."
           }
         ],
         "requestBody": {
@@ -1452,7 +1469,7 @@
       "delete": {
         "operationId": "DELETE__api_group__groupId",
         "summary": "Dissolve group",
-        "description": "Owner only. Deletes memberships/read receipts and removes access to group history.",
+        "description": "Owner only. Deletes memberships and removes group history/list access; clears unread while preserving conversation preferences.",
         "tags": [
           "group"
         ],
@@ -1505,104 +1522,6 @@
               "description": "JSON integer ID. Use an int64-capable decoder; JavaScript Numbers may lose precision."
             },
             "description": ""
-          }
-        ]
-      }
-    },
-    "/api/group/{groupId}/messages/{messageId}/receipts": {
-      "get": {
-        "operationId": "GET__api_group__groupId__messages__messageId__receipts",
-        "summary": "List group message readers",
-        "description": "Current member only. Lists members whose read watermark reaches this message, with read_at and last_read_message_id.",
-        "tags": [
-          "group"
-        ],
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Response25"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          },
-          "405": {
-            "$ref": "#/components/responses/MethodNotAllowed"
-          }
-        },
-        "parameters": [
-          {
-            "name": "groupId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "description": "JSON integer ID. Use an int64-capable decoder; JavaScript Numbers may lose precision."
-            },
-            "description": ""
-          },
-          {
-            "name": "messageId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "description": "JSON integer ID. Use an int64-capable decoder; JavaScript Numbers may lose precision."
-            },
-            "description": ""
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50
-            },
-            "description": "Maximum number of items."
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0,
-              "default": 0,
-              "maximum": 1000000
-            },
-            "description": "Zero-based item offset."
           }
         ]
       }
@@ -1817,329 +1736,6 @@
             "description": "Zero-based item offset."
           }
         ]
-      }
-    },
-    "/api/message/private/{userId}": {
-      "get": {
-        "operationId": "GET__api_message_private__userId",
-        "summary": "List private message history",
-        "description": "Newest-first history. Group history requires current membership. IDs in this enrichment response are JSON integers.",
-        "tags": [
-          "message"
-        ],
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Response30"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          },
-          "405": {
-            "$ref": "#/components/responses/MethodNotAllowed"
-          }
-        },
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "description": "JSON integer ID. Use an int64-capable decoder; JavaScript Numbers may lose precision."
-            },
-            "description": ""
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50
-            },
-            "description": "Maximum number of items."
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0,
-              "default": 0
-            },
-            "description": "Zero-based item offset."
-          }
-        ]
-      }
-    },
-    "/api/message/group/{groupId}": {
-      "get": {
-        "operationId": "GET__api_message_group__groupId",
-        "summary": "List group message history",
-        "description": "Newest-first history. Group history requires current membership. IDs in this enrichment response are JSON integers.",
-        "tags": [
-          "message"
-        ],
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Response31"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          },
-          "405": {
-            "$ref": "#/components/responses/MethodNotAllowed"
-          }
-        },
-        "parameters": [
-          {
-            "name": "groupId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "description": "JSON integer ID. Use an int64-capable decoder; JavaScript Numbers may lose precision."
-            },
-            "description": ""
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50
-            },
-            "description": "Maximum number of items."
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0,
-              "default": 0
-            },
-            "description": "Zero-based item offset."
-          }
-        ]
-      }
-    },
-    "/api/message/read": {
-      "post": {
-        "operationId": "POST__api_message_read",
-        "summary": "Mark private or group conversation read",
-        "description": "Private: from_id positive, group_id absent/0. Group: group_id positive and message_id optional (0 means current latest message); updates read watermark and unread count.",
-        "tags": [
-          "message"
-        ],
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Response32"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          },
-          "405": {
-            "$ref": "#/components/responses/MethodNotAllowed"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "from_id": {
-                    "type": "integer",
-                    "format": "int64",
-                    "minimum": 1
-                  },
-                  "group_id": {
-                    "type": "integer",
-                    "format": "int64",
-                    "minimum": 0
-                  },
-                  "message_id": {
-                    "oneOf": [
-                      {
-                        "type": "integer",
-                        "format": "int64",
-                        "minimum": 0
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "^[0-9]+$"
-                      }
-                    ],
-                    "description": "Optional exact message cursor. Accepts an int64 JSON integer or decimal string (recommended for JavaScript); zero means current latest group message."
-                  }
-                },
-                "oneOf": [
-                  {
-                    "required": [
-                      "from_id"
-                    ],
-                    "properties": {
-                      "group_id": {
-                        "type": "integer",
-                        "format": "int64",
-                        "enum": [
-                          0
-                        ]
-                      }
-                    }
-                  },
-                  {
-                    "required": [
-                      "group_id"
-                    ],
-                    "properties": {
-                      "group_id": {
-                        "type": "integer",
-                        "format": "int64",
-                        "minimum": 1
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/message/unread": {
-      "get": {
-        "operationId": "GET__api_message_unread",
-        "summary": "Get own unread summary",
-        "description": "",
-        "tags": [
-          "message"
-        ],
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Response33"
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          },
-          "405": {
-            "$ref": "#/components/responses/MethodNotAllowed"
-          }
-        }
       }
     },
     "/api/upload": {
@@ -3030,7 +2626,24 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OpenConversationResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
                 }
               }
             }
@@ -3045,10 +2658,13 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "pattern": "^(private|group):[1-9][0-9]*$"
+            },
+            "description": "Viewer-scoped private peer or group ID; owner comes from authentication."
           }
-        ]
+        ],
+        "description": "Explicitly ensures the authenticated owner's row. Returns null data. Existing preferences and message summary are preserved."
       }
     },
     "/api/friend/incoming": {
@@ -3285,6 +2901,214 @@
                 "$ref": "#/components/schemas/GroupApplicationReview"
               }
             }
+          }
+        }
+      }
+    },
+    "/api/conversation/{scope}/messages": {
+      "get": {
+        "operationId": "getConversationMessages",
+        "summary": "Get an authorized conversation history page",
+        "description": "Newest-first by persisted timestamp and ID. Requires a valid peer or current group membership; does not create a row. id_string preserves message IDs exactly.",
+        "tags": [
+          "Conversation"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Response30"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        },
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(private|group):[1-9][0-9]*$"
+            },
+            "description": "Viewer-scoped private peer or group ID; owner comes from authentication."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "description": "Maximum number of items."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Zero-based item offset."
+          }
+        ]
+      }
+    },
+    "/api/conversation/{scope}/read": {
+      "post": {
+        "operationId": "markConversationRead",
+        "summary": "Mark the authenticated viewer's whole conversation read",
+        "description": "Clears the current unread count and sets read_at under a row lock. No message cursor or individual receipt.",
+        "tags": [
+          "Conversation"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "unread_count": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "read_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
+          }
+        },
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(private|group):[1-9][0-9]*$"
+            },
+            "description": "Viewer-scoped private peer or group ID; owner comes from authentication."
+          }
+        ]
+      }
+    },
+    "/api/conversation/unread": {
+      "get": {
+        "operationId": "getConversationUnread",
+        "summary": "Get own unread summary",
+        "description": "",
+        "tags": [
+          "Conversation"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Response33"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "405": {
+            "$ref": "#/components/responses/MethodNotAllowed"
           }
         }
       }
@@ -3572,15 +3396,6 @@
             "type": "string",
             "format": "date-time"
           },
-          "last_read_message_id": {
-            "type": "string",
-            "pattern": "^[0-9]+$",
-            "description": "Decimal ID encoded as a JSON string to preserve int64 precision."
-          },
-          "read_at": {
-            "type": "string",
-            "format": "date-time"
-          },
           "joined_at": {
             "type": "string",
             "format": "date-time"
@@ -3592,7 +3407,6 @@
           "user_id",
           "role",
           "nickname",
-          "last_read_message_id",
           "joined_at"
         ]
       },
@@ -3788,6 +3602,11 @@
           },
           "added_by_peer": {
             "type": "boolean"
+          },
+          "read_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "required": [
@@ -3867,6 +3686,10 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^(private|group):[1-9][0-9]*$"
           }
         },
         "required": [
@@ -3877,7 +3700,8 @@
           "latest_message_type",
           "latest_preview",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "id"
         ]
       },
       "UnreadSummary": {
@@ -5357,34 +5181,6 @@
           "decision"
         ]
       },
-      "ConversationPreference": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "pinned": {
-            "type": "boolean"
-          },
-          "muted": {
-            "type": "boolean"
-          },
-          "draft": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "pinned",
-          "muted",
-          "draft",
-          "updated_at"
-        ]
-      },
       "FriendNoticesResponse": {
         "type": "object",
         "properties": {
@@ -5440,25 +5236,6 @@
           },
           "data": {
             "$ref": "#/components/schemas/GroupApplication"
-          }
-        },
-        "required": [
-          "code",
-          "message",
-          "data"
-        ]
-      },
-      "OpenConversationResponse": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "integer"
-          },
-          "message": {
-            "type": "string"
-          },
-          "data": {
-            "$ref": "#/components/schemas/ConversationPreference"
           }
         },
         "required": [

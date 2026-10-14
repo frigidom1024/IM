@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, onScopeDispose } from 'vue'
 import { authApi, friendApi, userApi, groupApi } from '../api/user'
 import { wsClient } from '../api/ws'
 
@@ -54,6 +54,11 @@ export const useUserStore = defineStore('user', () => {
   wsClient.on('friend_changed', () => { if (token.value) { loadFriends(); loadNotices() } })
   wsClient.on('group_changed', () => { if (token.value) { loadGroups(); loadApplications() } })
   wsClient.on('open', refreshRelations)
+  if (typeof document !== 'undefined') {
+    const refresh = () => { if (document.visibilityState === 'visible') refreshRelations() }
+    document.addEventListener('visibilitychange', refresh)
+    onScopeDispose(() => document.removeEventListener('visibilitychange', refresh))
+  }
 
   const isLoggedIn = computed(() => !!token.value)
   const myId = computed(() => user.value?.id || 0)

@@ -42,7 +42,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 	previous := mysql.Client
 	mysql.Client = db
 	defer func() { mysql.Client = previous; sqlDB, _ := db.DB(); sqlDB.Close() }()
-	if err = db.AutoMigrate(&model.User{}, &model.Friend{}, &model.PrivatePair{}, &model.Group{}, &model.GroupMember{}, &model.GroupApplication{}, &model.Message{}, &model.UnreadCount{}, &model.ConversationPreference{}, &model.UploadSession{}, &model.MediaAsset{}, &model.MessageAsset{}); err != nil {
+	if err = db.AutoMigrate(&model.User{}, &model.Friend{}, &model.PrivatePair{}, &model.Group{}, &model.GroupMember{}, &model.GroupApplication{}, &model.Message{}, &model.Conversation{}, &model.UploadSession{}, &model.MediaAsset{}, &model.MessageAsset{}); err != nil {
 		t.Fatal(err)
 	}
 	if err = logger.Init("error", "stdout"); err != nil {
@@ -56,13 +56,18 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 		}
 	}
 	defer func() {
-		for _, table := range []string{"message_asset", "media_asset", "upload_session", "conversation_preference", "unread_count", "message", "group_application", "group_member", "group", "friend", "private_pair", "user"} {
+		for _, table := range []string{"message_asset", "media_asset", "upload_session", "conversation", "message", "group_application", "group_member", "group", "friend", "private_pair", "user"} {
 			db.Exec("DELETE FROM `" + table + "`")
 		}
 	}()
 	// Fixture has an outgoing-only conversation and one joined group, independent
 	// of unread aggregates. This catches implementations deriving only unread scopes.
 	if err = db.Create(&model.Message{ID: 900001, FromID: 9101, ToID: 9102, MsgType: "text", Content: "outgoing", CreatedAt: time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Transaction(func(tx *gorm.DB) error {
+		return service.NewConversationService(registry.NewConversationRepository(), registry.NewMessageRepository()).RecordMessage(tx, &model.Message{ID: 900001, FromID: 9101, ToID: 9102, CreatedAt: time.Now()})
+	}); err != nil {
 		t.Fatal(err)
 	}
 	group := model.Group{ID: 9201, OwnerID: 9101, Name: "P1 group", MaxMembers: 10}
@@ -76,7 +81,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := NewRouter(registry.NewUserRepository(), registry.NewFriendRepository(), registry.NewGroupRepository(), registry.NewGroupMemberRepository(), registry.NewMessageRepository(), registry.NewMessageReadRepository(), store, "builtin", "", 0, 0, nil, nil)
+	router := NewRouter(registry.NewUserRepository(), registry.NewFriendRepository(), registry.NewGroupRepository(), registry.NewGroupMemberRepository(), registry.NewMessageRepository(), registry.NewConversationRepository(), store, "builtin", "", 0, 0, nil, nil)
 	server := httptest.NewServer(router.Handler())
 	defer server.Close()
 	token1, _ := util.GenerateToken(9101, "alice", 1)
@@ -107,7 +112,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 	}
 	request("POST", "/api/conversation/group:9201/open", token1, "", nil, nil, 200)
 	data := request("GET", "/api/conversation", token1, "", nil, nil, 200)
-	var list struct{ Data []model.Conversation }
+	var list struct{ Data []model.ConversationSummary }
 	if err = json.Unmarshal(data, &list); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +166,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 	ws := connect.NewWsConnServer()
 	request("POST", "/api/friend/add", token1, "application/json", strings.NewReader(`{"friend_id":9102}`), nil, 200)
 	request("POST", "/api/friend/add", token2, "application/json", strings.NewReader(`{"friend_id":9101}`), nil, 200)
-	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(service.NewMessageService(registry.NewMessageRepository(), registry.NewMessageReadRepository()), service.NewGroupService(registry.NewGroupRepository(), registry.NewGroupMemberRepository()), ws))
+	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(service.NewMessagingService(registry.NewMessageRepository(), registry.NewConversationRepository()), service.NewGroupService(registry.NewGroupRepository(), registry.NewGroupMemberRepository()), ws))
 	wsServer := httptest.NewServer(http.HandlerFunc(ws.HandleWebSocket))
 	defer wsServer.Close()
 	defer ws.Shutdown(context.Background())
@@ -173,7 +178,7 @@ func TestP1ConversationsAndResumableMediaHTTP(t *testing.T) {
 		}
 		defer conn.Close()
 		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		if err = conn.WriteJSON(map[string]any{"cmd": "msg", "seq": seq, "data": map[string]any{"from_id": from, "to_id": to, "type": "file", "content": string(data)}}); err != nil {
+		if err = conn.WriteJSON(map[string]any{"cmd": "msg", "seq": seq, "data": map[string]any{"conversation_id": fmt.Sprintf("private:%d", to), "type": "file", "content": string(data)}}); err != nil {
 			t.Fatal(err)
 		}
 		var reply struct{ Cmd string }

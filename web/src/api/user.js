@@ -33,19 +33,14 @@ export const groupApi = {
   updateAnnouncement: (groupId, announcement) => http.put(`/group/${groupId}/announcement`, { announcement }),
   updateMember: (groupId, userId, patch) => http.patch(`/group/${groupId}/members/${userId}`, patch),
   dissolve: groupId => http.delete(`/group/${groupId}`),
-  getReceipts: (groupId, messageId, params) => http.get(`/group/${groupId}/messages/${messageId}/receipts`, { params }),
   getFiles: (groupId, params) => http.get(`/group/${groupId}/files`, { params }),
   removeMember: (groupId, userId) => http.delete(`/group/${groupId}/members/${userId}`)
 }
 
-export const messageApi = {
-  getPrivate: (userId) => http.get(`/message/private/${userId}`),
-  getGroup: (groupId) => http.get(`/message/group/${groupId}`),
-  markRead: (data) => http.post('/message/read', data),
-  getUnreadCount: () => http.get('/message/unread')
-}
-
 export const conversationApi = {
+  getMessages: (scope, params) => http.get(`/conversation/${encodeURIComponent(scope)}/messages`, { params }),
+  markRead: scope => http.post(`/conversation/${encodeURIComponent(scope)}/read`),
+  getUnreadCount: () => http.get('/conversation/unread'),
 	open: scope => http.post(`/conversation/${encodeURIComponent(scope)}/open`),
   getList: params => http.get('/conversation', { params }),
   update: (scope, patch) => http.patch(`/conversation/${encodeURIComponent(scope)}`, patch)

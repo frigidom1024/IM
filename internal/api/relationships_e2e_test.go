@@ -42,7 +42,7 @@ func (f *relationshipFixture) socket(user int) *websocket.Conn {
 	f.t.Helper()
 	snowflake.Init(0, 1)
 	ws := connect.NewWsConnServer()
-	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(service.NewMessageService(registry.NewMessageRepository(), registry.NewMessageReadRepository()), service.NewGroupService(registry.NewGroupRepository(), registry.NewGroupMemberRepository()), ws))
+	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(service.NewMessagingService(registry.NewMessageRepository(), registry.NewConversationRepository()), service.NewGroupService(registry.NewGroupRepository(), registry.NewGroupMemberRepository()), ws))
 	server := httptest.NewServer(http.HandlerFunc(ws.HandleWebSocket))
 	f.t.Cleanup(func() { ws.Shutdown(context.Background()); server.Close() })
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"?token="+f.tokens[user], nil)
@@ -67,7 +67,7 @@ type relationReply struct {
 func sendRelation(t *testing.T, conn *websocket.Conn, from, to int64, seq, kind, content string) relationReply {
 	t.Helper()
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	err := conn.WriteJSON(map[string]any{"cmd": "msg", "seq": seq, "data": map[string]any{"from_id": from, "to_id": to, "type": kind, "content": content}})
+	err := conn.WriteJSON(map[string]any{"cmd": "msg", "seq": seq, "data": map[string]any{"conversation_id": fmt.Sprintf("private:%d", to), "type": kind, "content": content}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestSingleDirectionPrivateMessagingOverWebSocket(t *testing.T) {
 		t.Fatalf("second intro allowed: %+v", reply)
 	}
 	raw := f.call(1, "GET", "/api/conversation", nil, 200)
-	var items []model.Conversation
+	var items []model.ConversationSummary
 	json.Unmarshal(raw, &items)
 	if len(items) != 1 || items[0].UnreadCount != 1 || items[0].SendPolicy != "unavailable" {
 		t.Fatalf("recipient conversation missing: %s", raw)
@@ -145,7 +145,7 @@ func TestConcurrentPrivateIntrosOnlyPersistOne(t *testing.T) {
 	if success != 1 {
 		t.Fatalf("concurrent intros: %+v", replies)
 	}
-	raw := f.call(1, "GET", fmt.Sprintf("/api/message/private/%d", a), nil, 200)
+	raw := f.call(1, "GET", fmt.Sprintf("/api/conversation/private:%d/messages", a), nil, 200)
 	var history []any
 	json.Unmarshal(raw, &history)
 	if len(history) != 1 {
@@ -166,7 +166,7 @@ func newRelationshipFixture(t *testing.T) *relationshipFixture {
 	previous := mysql.Client
 	mysql.Client = db
 	t.Cleanup(func() { mysql.Client = previous; pool, _ := db.DB(); pool.Close() })
-	if err = db.AutoMigrate(&model.User{}, &model.Friend{}, &model.PrivatePair{}, &model.Group{}, &model.GroupMember{}, &model.GroupApplication{}, &model.Message{}, &model.UnreadCount{}, &model.ConversationPreference{}); err != nil {
+	if err = db.AutoMigrate(&model.User{}, &model.Friend{}, &model.PrivatePair{}, &model.Group{}, &model.GroupMember{}, &model.GroupApplication{}, &model.Message{}, &model.Conversation{}); err != nil {
 		t.Fatal(err)
 	}
 	logger.Init("error", "stdout")
@@ -183,8 +183,7 @@ func newRelationshipFixture(t *testing.T) *relationshipFixture {
 		var groupIDs []int64
 		db.Model(&model.Group{}).Where("owner_id IN ?", ids).Pluck("id", &groupIDs)
 		db.Where("from_id IN ? OR to_id IN ? OR group_id IN ?", ids, ids, groupIDs).Delete(&model.Message{})
-		db.Where("user_id IN ? OR from_id IN ? OR group_id IN ?", ids, ids, groupIDs).Delete(&model.UnreadCount{})
-		db.Where("user_id IN ?", ids).Delete(&model.ConversationPreference{})
+		db.Where("from_id IN ? OR to_id IN ? OR group_id IN ?", ids, ids, groupIDs).Delete(&model.Conversation{})
 		db.Where("user_id IN ? OR group_id IN ?", ids, groupIDs).Delete(&model.GroupApplication{})
 		db.Where("user_id IN ? OR group_id IN ?", ids, groupIDs).Delete(&model.GroupMember{})
 		db.Where("owner_id IN ?", ids).Delete(&model.Group{})
@@ -194,7 +193,7 @@ func newRelationshipFixture(t *testing.T) *relationshipFixture {
 	})
 	snowflake.Init(0, 1)
 	ws := connect.NewWsConnServer()
-	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(service.NewMessageService(registry.NewMessageRepository(), registry.NewMessageReadRepository()), service.NewGroupService(registry.NewGroupRepository(), registry.NewGroupMemberRepository()), ws))
+	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(service.NewMessagingService(registry.NewMessageRepository(), registry.NewConversationRepository()), service.NewGroupService(registry.NewGroupRepository(), registry.NewGroupMemberRepository()), ws))
 	f.wsServer = httptest.NewServer(http.HandlerFunc(ws.HandleWebSocket))
 	t.Cleanup(func() { ws.Shutdown(context.Background()); f.wsServer.Close() })
 	for i := 0; i < 4; i++ {
@@ -206,7 +205,7 @@ func newRelationshipFixture(t *testing.T) *relationshipFixture {
 		token, _ := util.GenerateToken(int(u.ID), u.Username, 1)
 		f.tokens = append(f.tokens, token)
 	}
-	f.server = httptest.NewServer(NewRouter(registry.NewUserRepository(), registry.NewFriendRepository(), registry.NewGroupRepository(), registry.NewGroupMemberRepository(), registry.NewMessageRepository(), registry.NewMessageReadRepository(), nil, "builtin", "", 0, 0, nil, nil, WithRealtimeNotifier(func(command string, data any, users ...int64) {
+	f.server = httptest.NewServer(NewRouter(registry.NewUserRepository(), registry.NewFriendRepository(), registry.NewGroupRepository(), registry.NewGroupMemberRepository(), registry.NewMessageRepository(), registry.NewConversationRepository(), nil, "builtin", "", 0, 0, nil, nil, WithRealtimeNotifier(func(command string, data any, users ...int64) {
 		seen := map[int64]bool{}
 		for _, id := range users {
 			if !seen[id] {
@@ -381,7 +380,7 @@ func TestFriendRelationshipsDoNotCreateConversations(t *testing.T) {
 	f.call(0, "POST", "/api/friend/add", map[string]any{"friend_id": b}, 200)
 	for _, viewer := range []int{0, 1} {
 		raw := f.call(viewer, "GET", "/api/conversation", nil, 200)
-		var items []model.Conversation
+		var items []model.ConversationSummary
 		json.Unmarshal(raw, &items)
 		if len(items) != 0 {
 			t.Fatalf("adding a friend created conversations: %s", raw)
@@ -400,7 +399,7 @@ func TestFriendRelationshipsDoNotCreateConversations(t *testing.T) {
 	f.call(0, "PATCH", scope, map[string]any{"draft": "keep draft"}, 200)
 	f.call(0, "POST", scope+"/open", nil, 200)
 	raw = f.call(0, "GET", "/api/conversation", nil, 200)
-	var items []model.Conversation
+	var items []model.ConversationSummary
 	json.Unmarshal(raw, &items)
 	if len(items) != 1 || items[0].Draft != "keep draft" {
 		t.Fatalf("opening overwrote draft: %s", raw)
@@ -430,7 +429,7 @@ func TestGroupApplicationsRequireOwnerApproval(t *testing.T) {
 		t.Fatalf("join did not create pending application: %s", raw)
 	}
 	f.call(1, "GET", base+"/members", nil, 403)
-	f.call(1, "GET", fmt.Sprintf("/api/message/group/%d", group.ID), nil, 403)
+	f.call(1, "GET", fmt.Sprintf("/api/conversation/group:%d/messages", group.ID), nil, 403)
 	raw = f.call(1, "GET", "/api/group/list", nil, 200)
 	var groups []model.Group
 	json.Unmarshal(raw, &groups)
@@ -455,7 +454,7 @@ func TestGroupApplicationsRequireOwnerApproval(t *testing.T) {
 	}
 	f.call(1, "GET", base+"/members", nil, 200)
 	raw = f.call(1, "GET", "/api/conversation", nil, 200)
-	var conversations []model.Conversation
+	var conversations []model.ConversationSummary
 	json.Unmarshal(raw, &conversations)
 	if len(conversations) != 0 {
 		t.Fatalf("approval created empty conversation: %s", raw)

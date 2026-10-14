@@ -1,3 +1,5 @@
+import { parseConversationID } from './conversation-id.js'
+
 // WebSocket 连接管理
 class WsClient {
   constructor() {
@@ -38,7 +40,7 @@ class WsClient {
     this.ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data)
-        console.log('[ws] <<', msg.cmd, msg.seq || '', typeof msg.data === 'object' ? JSON.stringify(msg.data).slice(0, 200) : msg.data)
+        console.log('[ws] <<', msg.cmd, msg.seq || '', typeof msg.data === 'object' ? JSON.stringify(msg.data ?? null).slice(0, 200) : msg.data)
         this._emit(msg.cmd, msg)
         this._emit('*', msg)
       } catch (err) {
@@ -61,7 +63,7 @@ class WsClient {
   }
 
   send(msg) {
-    console.log('[ws] >>', msg.cmd, msg.seq || '', JSON.stringify(msg.data).slice(0, 200))
+    console.log('[ws] >>', msg.cmd, msg.seq || '', JSON.stringify(msg.data ?? null).slice(0, 200))
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
       return true
@@ -73,11 +75,12 @@ class WsClient {
     return false
   }
 
-  sendChat(fromId, toId, content, msgType = 'text', groupId = 0, seq = crypto.randomUUID()) {
+  sendChat(conversationID, content, msgType = 'text', seq = crypto.randomUUID()) {
+    if (!parseConversationID(conversationID)) throw new Error('无效的会话标识')
     this.send({
       cmd: 'msg',
       seq,
-      data: { from_id: fromId, to_id: groupId > 0 ? 0 : toId, group_id: groupId, type: msgType, content }
+      data: { conversation_id: conversationID, type: msgType, content }
     })
     return seq
   }

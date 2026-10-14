@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +34,9 @@ func WithWebSocketHeader(key, value string) WSOption {
 type WebSocketClient struct {
 	connMu        sync.RWMutex
 	writeMu       sync.Mutex
-	readMu        sync.Mutex
+	messages      chan WSMessage
+	receiveErrors chan error
+	receiveDone   chan struct{}
 	tokenProvider func(context.Context) (string, error)
 	lifetime      context.Context
 	cancel        context.CancelFunc
@@ -87,10 +90,14 @@ func (c *Client) ConnectWebSocket(ctx context.Context, options ...WSOption) (*We
 		lifetime:      lifetime,
 		cancel:        cancel,
 		heartbeatDone: make(chan struct{}),
+		messages:      make(chan WSMessage, 64),
+		receiveErrors: make(chan error, 16),
+		receiveDone:   make(chan struct{}),
 		conn:          conn,
 		endpoint:      endpoint,
 		headers:       cloneHeader(headers),
 	}
+	go client.receiveLoop()
 	if c.websocketHeartbeatInterval > 0 {
 		go client.heartbeat(c.websocketHeartbeatInterval)
 	} else {
@@ -127,7 +134,7 @@ func (c *WebSocketClient) send(message WSMessage, timeout time.Duration) error {
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	conn, err := c.connection()
+	conn, err := c.currentConnection()
 	if err != nil {
 		return err
 	}
@@ -149,19 +156,23 @@ func (c *WebSocketClient) send(message WSMessage, timeout time.Duration) error {
 }
 
 // SendChat sends a text or media chat message and returns the sequence number.
-func (c *WebSocketClient) SendChat(fromID, toID, groupID int64, content, messageType string) (string, error) {
+func (c *WebSocketClient) SendChat(conversationID, content, messageType string) (string, error) {
+	if err := validateConversationID(conversationID); err != nil {
+		return "", err
+	}
 	seq := nextSequence()
-	return seq, c.Send(WSMessage{
-		Cmd: "msg",
-		Seq: seq,
-		Data: ChatMessage{
-			FromID:  fromID,
-			ToID:    toID,
-			GroupID: groupID,
-			Type:    messageType,
-			Content: content,
-		},
-	})
+	return seq, c.Send(WSMessage{Cmd: "msg", Seq: seq, Data: ChatMessage{ConversationID: conversationID, Type: messageType, Content: content}})
+}
+func validateConversationID(scope string) error {
+	parts := strings.Split(scope, ":")
+	if len(parts) != 2 || (parts[0] != "private" && parts[0] != "group") {
+		return errors.New("gochat sdk: invalid conversation ID")
+	}
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != parts[1] {
+		return errors.New("gochat sdk: invalid conversation ID")
+	}
+	return nil
 }
 
 // Ping sends a protocol ping command.
@@ -169,28 +180,105 @@ func (c *WebSocketClient) Ping() error {
 	return c.Send(WSMessage{Cmd: "ping"})
 }
 
-// Receive reads and decodes one protocol message. Transient connection
-// failures are reconnected transparently and are not returned to the caller.
-func (c *WebSocketClient) Receive() (WSMessage, error) {
-	if c == nil {
-		return WSMessage{}, errors.New("gochat sdk: websocket is not connected")
+// Receive returns the single, bounded message stream started by ConnectWebSocket.
+// Every call returns the same channel; multiple consumers divide messages rather
+// than receiving broadcasts. Close or a terminal receive failure closes it.
+func (c *WebSocketClient) Receive() <-chan WSMessage {
+	if c == nil || c.messages == nil {
+		closed := make(chan WSMessage)
+		close(closed)
+		return closed
 	}
-	c.readMu.Lock()
-	defer c.readMu.Unlock()
+	return c.messages
+}
+
+// Errors reports receive/decode/reconnect failures without blocking the reader.
+// Its bounded buffer retains recent errors, replacing the oldest on overflow.
+// Send and explicit Reconnect errors are still returned by those methods.
+func (c *WebSocketClient) Errors() <-chan error {
+	if c == nil || c.receiveErrors == nil {
+		closed := make(chan error, 1)
+		closed <- errors.New("gochat sdk: websocket is not connected")
+		close(closed)
+		return closed
+	}
+	return c.receiveErrors
+}
+
+func (c *WebSocketClient) reportReceiveError(err error) {
+	select {
+	case c.receiveErrors <- err:
+		return
+	default:
+	}
+	select {
+	case <-c.receiveErrors:
+	default:
+	}
+	c.receiveErrors <- err // Only the receive loop writes; a slot is now available.
+}
+
+func (c *WebSocketClient) receiveLoop() {
+	defer close(c.receiveDone)
+	defer close(c.receiveErrors)
+	defer close(c.messages)
+	defer c.shutdown()
+	consecutiveFailures := 0
 	for {
-		conn, err := c.connection()
+		if c.lifetime.Err() != nil {
+			return
+		}
+		conn, err := c.currentConnection()
 		if err != nil {
-			return WSMessage{}, err
+			if !c.isClosed() {
+				c.reportReceiveError(err)
+			}
+			return
 		}
+		_, body, readErr := conn.ReadMessage()
+		if readErr != nil {
+			if c.isClosed() {
+				return
+			}
+			// Another caller may have already replaced this connection deliberately.
+			c.connMu.RLock()
+			replaced := c.conn != conn
+			c.connMu.RUnlock()
+			if replaced {
+				continue
+			}
+			consecutiveFailures++
+			c.reportReceiveError(fmt.Errorf("gochat sdk: websocket read: %w", readErr))
+			if consecutiveFailures >= 5 {
+				c.reportReceiveError(fmt.Errorf("gochat sdk: websocket repeatedly disconnected: %w", readErr))
+				return
+			}
+			// Back off even when dialing succeeds but the peer immediately disconnects.
+			timer := time.NewTimer(time.Duration(100*(1<<min(consecutiveFailures-1, 4))) * time.Millisecond)
+			select {
+			case <-c.lifetime.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			if err = c.reconnectFrom(conn); err != nil {
+				if !c.isClosed() {
+					c.reportReceiveError(fmt.Errorf("gochat sdk: websocket reconnect: %w", errors.Join(readErr, err)))
+				}
+				return
+			}
+			continue
+		}
+		consecutiveFailures = 0
 		var message WSMessage
-		if err := conn.ReadJSON(&message); err == nil {
-			return message, nil
+		if err = json.Unmarshal(body, &message); err != nil {
+			c.reportReceiveError(fmt.Errorf("gochat sdk: websocket decode: %w", err))
+			continue // A complete malformed JSON frame does not invalidate the socket.
 		}
-		if c.isClosed() {
-			return WSMessage{}, errors.New("gochat sdk: websocket is closed")
-		}
-		if err := c.reconnectFrom(conn); err != nil {
-			return WSMessage{}, fmt.Errorf("gochat sdk: websocket reconnect: %w", err)
+		select {
+		case c.messages <- message:
+		case <-c.lifetime.Done():
+			return
 		}
 	}
 }
@@ -203,17 +291,27 @@ func (c *WebSocketClient) Reconnect(ctx context.Context) error {
 	return c.reconnect(ctx)
 }
 
-// Close closes the WebSocket connection and stops heartbeats and automatic reconnect.
+// Close cancels I/O and reconnects, stops both loops and closes the streams.
+// Buffered messages/errors remain available to drain after closure.
 func (c *WebSocketClient) Close() error {
 	if c == nil {
 		return nil
 	}
+	err := c.shutdown()
+	if c.receiveDone != nil {
+		<-c.receiveDone
+	}
+	if c.heartbeatDone != nil {
+		<-c.heartbeatDone
+	}
+	return err
+}
+
+// shutdown is non-waiting so the receive loop can also terminate the lifetime.
+func (c *WebSocketClient) shutdown() error {
 	c.connMu.Lock()
 	if c.closed {
 		c.connMu.Unlock()
-		if c.heartbeatDone != nil {
-			<-c.heartbeatDone
-		}
 		return nil
 	}
 	c.closed = true
@@ -223,17 +321,14 @@ func (c *WebSocketClient) Close() error {
 	conn := c.conn
 	c.conn = nil
 	c.connMu.Unlock()
-	var err error
 	if conn != nil {
-		err = conn.Close()
+		return conn.Close()
 	}
-	if c.heartbeatDone != nil {
-		<-c.heartbeatDone
-	}
-	return err
+	return nil
 }
 
-func (c *WebSocketClient) connection() (*websocket.Conn, error) {
+// currentConnection reads the saved connection; it never dials or reconnects.
+func (c *WebSocketClient) currentConnection() (*websocket.Conn, error) {
 	if c == nil {
 		return nil, errors.New("gochat sdk: websocket is not connected")
 	}
@@ -242,14 +337,6 @@ func (c *WebSocketClient) connection() (*websocket.Conn, error) {
 	c.connMu.RUnlock()
 	if closed {
 		return nil, errors.New("gochat sdk: websocket is closed")
-	}
-	if conn == nil {
-		if err := c.reconnect(c.lifetime); err != nil {
-			return nil, err
-		}
-		c.connMu.RLock()
-		conn = c.conn
-		c.connMu.RUnlock()
 	}
 	if conn == nil {
 		return nil, errors.New("gochat sdk: websocket is not connected")
@@ -357,19 +444,51 @@ type WSMessage struct {
 
 // ChatMessage is the data payload for a msg command.
 type ChatMessage struct {
-	FromID  int64  `json:"from_id"`
-	ToID    int64  `json:"to_id"`
-	GroupID int64  `json:"group_id"`
-	Type    string `json:"type"`
-	Content string `json:"content"`
+	ConversationID string     `json:"conversation_id"`
+	Type           string     `json:"type"`
+	Content        string     `json:"content"`
+	ID             int64      `json:"id,string,omitempty"`
+	SenderID       int64      `json:"sender_id,string,omitempty"`
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
 }
 
-// MessageReply is the ACK payload returned for a successfully persisted chat
-// message.
+// MessageReply is the ACK; exact message IDs are decoded from MessageIDString.
 type MessageReply struct {
-	Status    string `json:"status"`
-	MessageID int64  `json:"message_id"`
-	Duplicate bool   `json:"duplicate,omitempty"`
+	Status          string `json:"status"`
+	ConversationID  string `json:"conversation_id"`
+	MessageID       int64  `json:"message_id"`
+	MessageIDString string `json:"message_id_string,omitempty"`
+	Duplicate       bool   `json:"duplicate,omitempty"`
+}
+
+func (r *MessageReply) UnmarshalJSON(data []byte) error {
+	type alias MessageReply
+	var decoded alias
+	wire := struct {
+		MessageID json.RawMessage `json:"message_id"`
+		*alias
+	}{alias: &decoded}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	value := decoded.MessageIDString
+	if value == "" && len(wire.MessageID) > 0 {
+		value = string(wire.MessageID)
+		if wire.MessageID[0] == '"' {
+			if err := json.Unmarshal(wire.MessageID, &value); err != nil {
+				return err
+			}
+		}
+	}
+	if value != "" && value != "null" {
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return err
+		}
+		decoded.MessageID = id
+	}
+	*r = MessageReply(decoded)
+	return nil
 }
 
 // DecodeData decodes a WebSocket data payload into a caller-provided value.

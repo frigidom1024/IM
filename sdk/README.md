@@ -66,17 +66,23 @@ if err != nil {
 }
 defer ws.Close()
 
-seq, err := ws.SendChat(auth.User.ID, friendID, 0, "来自后端 SDK 的消息", "text")
+seq, err := ws.SendChat("private:" + strconv.FormatInt(friendID, 10), "来自后端 SDK 的消息", "text")
 if err != nil {
     log.Fatal(err)
 }
 
-for {
-    message, err := ws.Receive()
-    if err != nil {
-        log.Fatal(err)
-    }
+// No offline summary is pushed on connection. Fetch persistent state via HTTP.
+unread, err := userClient.GetUnreadSummary(ctx)
+if err != nil { log.Fatal(err) }
+log.Printf("未读：%d", unread.Count)
 
+go func() {
+    for err := range ws.Errors() {
+        log.Printf("WebSocket 接收异常：%v", err)
+    }
+}()
+
+for message := range ws.Receive() {
     if message.Cmd == "msg_reply" && message.Seq == seq {
         var reply sdk.MessageReply
         _ = message.DecodeData(&reply)
@@ -138,9 +144,30 @@ client, err := sdk.NewClient(baseURL,
 )
 ```
 
-调用方仍应持续调用 `Receive()` 处理业务消息和服务端控制帧。协议 `pong` 响应也由 `Receive()` 返回；手动 `Ping()` 继续可用。
+`ConnectWebSocket()` 成功后，SDK 自动启动唯一的读取循环。`Receive() <-chan sdk.WSMessage` 返回持续消息通道，外部直接使用 `for message := range ws.Receive()` 或 `select` 消费；协议 `pong` 也进入此通道。重复调用 `Receive()` 返回同一个通道，不会创建新连接或新读取循环。多个消费者会分摊消息，不是广播订阅。
 
-SDK 的 `Receive()` 在遇到临时断线时会自动重新建立连接，最多尝试 5 次并使用退避等待。`Send()` 遇到写入失败时会尝试恢复连接，但不会自动重发原消息；调用方应使用原来的 `seq` 再次发送，利用服务端幂等保证不会产生重复消息。
+消息通道缓冲 64 条，满后施加背压，不静默丢弃业务消息；调用方应持续消费。`Errors() <-chan error` 独立报告读取、JSON 解码及自动重连错误，缓冲 16 条，满后替换最旧的诊断信息，不阻塞消息读取。`Send()` 和显式 `Reconnect()` 的错误仍由各自方法返回。
+
+SDK 的读取循环遇到断线时保留读取错误，通过 `Errors()` 通知并退避重连，每次重连最多拨号 5 次。完整帧中的 JSON 解码失败只上报错误，不重建连接。重连失败，或者连续 5 次在收到完整帧前断开时，客户端停止，两个通道关闭；需要重新连接时调用 `ConnectWebSocket()` 创建新客户端。`Send()` 遇到写入失败时会尝试恢复连接，但不会自动重发原消息；调用方应使用原来的 `seq` 再次发送，利用服务端幂等保证不会产生重复消息。
+
+`Close()` 取消正在进行的读写、重连和心跳，等待内部循环退出并关闭通道。即使消费者停止读取或消息缓冲已满，关闭也不会等待消费者腾出空间；已缓冲的消息和错误仍可读完。调用方退出消费时应关闭客户端：
+
+```go
+messages, errs := ws.Receive(), ws.Errors()
+for messages != nil || errs != nil {
+    select {
+    case <-ctx.Done():
+        _ = ws.Close()
+        return
+    case message, ok := <-messages:
+        if !ok { messages = nil; continue }
+        log.Printf("消息：%s", message.Cmd)
+    case err, ok := <-errs:
+        if !ok { errs = nil; continue }
+        log.Printf("接收异常：%v", err)
+    }
+}
+```
 
 调用方也可以显式执行：
 
@@ -251,7 +278,7 @@ Message IDs accept both legacy JSON numbers and lossless JSON strings.
 
 Group management methods: `SearchGroups`, `InviteGroupMember`,
 `TransferGroupOwner`, `UpdateGroupAnnouncement`, `UpdateGroupMember`,
-`DissolveGroup`, `ListGroupMembersPage`, and `ListGroupReadReceipts`.
+`DissolveGroup` and `ListGroupMembersPage`.
 `GroupMemberPatch` uses optional nickname, role and muted-until fields;
 set `Unmute: true` to clear the mute. Server authorization remains authoritative.
 `ListGroupFiles(ctx, groupID, limit, offset)` lists group assets.
@@ -295,3 +322,13 @@ into `APIError`; successful binary responses are never decoded as JSON.
 The caller closes the response body. Downloads are single requests and do not
 retry a partially consumed body. File IDs are the segment in the returned
 `/api/file/<file_id>/download` URL.
+
+### Conversation history and read state
+
+`MarkConversationRead(ctx, "private:2")` and `MarkConversationRead(ctx, "group:7")` clear the authenticated user's whole conversation via HTTP, with no message cursor. `MarkRead` / `MarkReadConversation` remain ID-based helpers. `GetUnreadSummary` reads `/api/conversation/unread`; each entry carries its scope `ID`. `ListPrivateMessagesPage` and `ListGroupMessagesPage` now use `/api/conversation/{scope}/messages`. WS has no read command and group message receipts are removed.
+
+### Conversation-routed WebSocket messages
+
+`SendChat(conversationID, content, messageType)` sends only a scope (`private:<peer>` or `group:<group>`), type and content. `ChatMessage` decodes downstream `ConversationID`, exact `ID` / `SenderID` and `CreatedAt`. `MessageReply.ConversationID` is the sender's scope; its numeric `MessageID` is decoded from the authoritative `MessageIDString` when available. Preserve the original seq and payload for an explicit retry.
+
+The server no longer sends `offline_notify`. Call `GetUnreadSummary`, `ListConversations` and relationship HTTP methods after connecting and whenever the host needs to refresh notifications. The internal reader automatically reconnects while the channel remains open; applications should keep their HTTP refresh lifecycle active independently of receiving WS messages. Existing three-ID `SendChat` callers must use the new scope signature.

@@ -40,7 +40,7 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 	previous := mysql.Client
 	mysql.Client = db
 	t.Cleanup(func() { mysql.Client = previous; sqlDB, _ := db.DB(); _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&model.User{}, &model.Group{}, &model.GroupMember{}, &model.GroupApplication{}, &model.Message{}, &model.UnreadCount{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Group{}, &model.GroupMember{}, &model.GroupApplication{}, &model.Message{}, &model.Conversation{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := logger.Init("error", "stdout"); err != nil {
@@ -70,7 +70,7 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 	groupRepo := registry.NewGroupRepository()
 	memberRepo := registry.NewGroupMemberRepository()
 	msgRepo := registry.NewMessageRepository()
-	readRepo := registry.NewMessageReadRepository()
+	readRepo := registry.NewConversationRepository()
 	router := NewRouter(registry.NewUserRepository(), registry.NewFriendRepository(), groupRepo, memberRepo, msgRepo, readRepo, nil, "local", "", 100, 5, nil, nil)
 	httpServer := httptest.NewServer(router.engine)
 	defer httpServer.Close()
@@ -109,7 +109,7 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 	groupPath := fmt.Sprintf("/api/group/%d", group.ID)
 	t.Cleanup(func() {
 		db.Where("group_id = ?", group.ID).Delete(&model.Message{})
-		db.Where("group_id = ?", group.ID).Delete(&model.UnreadCount{})
+		db.Where("group_id = ?", group.ID).Delete(&model.Conversation{})
 		db.Where("group_id = ?", group.ID).Delete(&model.GroupMember{})
 		db.Delete(&model.Group{}, group.ID)
 	})
@@ -146,9 +146,9 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 	}
 
 	ws := connect.NewWsConnServer()
-	msgService := service.NewMessageService(msgRepo, readRepo)
+	msgService := service.NewMessagingService(msgRepo, readRepo)
 	ws.Registry().Register(connect.CmdMsg, wsHandler.NewChatHandler(msgService, service.NewGroupService(groupRepo, memberRepo), ws))
-	ws.Registry().Register(connect.CmdMsgRead, wsHandler.NewMsgReadHandler(msgService, nil, ws))
+	ws.Registry().Register(connect.CmdPing, wsHandler.NewPingHandler(ws))
 	wsServer := httptest.NewServer(http.HandlerFunc(ws.HandleWebSocket))
 	defer wsServer.Close()
 	defer ws.Shutdown(context.Background())
@@ -178,43 +178,53 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 		return reply.Data.MessageID
 	}
 	send := func(user int, seq string, want string) int64 {
-		return wsCall(user, "msg", seq, map[string]any{"from_id": users[user].ID, "group_id": group.ID, "type": "text", "content": seq}, want)
+		return wsCall(user, "msg", seq, map[string]any{"conversation_id": fmt.Sprintf("group:%d", group.ID), "type": "text", "content": seq}, want)
 	}
 	send(3, "nonmember", "error")
 	call(1, "PATCH", fmt.Sprintf("%s/members/%d", groupPath, users[2].ID), map[string]any{"muted_until": time.Now().Add(time.Hour).UTC()}, 200)
 	send(2, "muted", "error")
 	call(1, "PATCH", fmt.Sprintf("%s/members/%d", groupPath, users[2].ID), map[string]any{"unmute": true}, 200)
-	messageID := send(2, "allowed", "msg_reply")
-	call(3, "GET", fmt.Sprintf("/api/message/group/%d", group.ID), nil, 403)
-	receiptPath := fmt.Sprintf("%s/messages/%d/receipts", groupPath, messageID)
-	call(3, "GET", receiptPath, nil, 403)
-	wsCall(3, "msg_read", "invalid-read", map[string]any{"message_id": fmt.Sprint(messageID)}, "error")
-	wsCall(1, "msg_read", "read", map[string]any{"message_id": fmt.Sprint(messageID)}, "msg_read_reply")
-	if err := json.Unmarshal(call(0, "GET", receiptPath, nil, 200), &members); err != nil {
+	send(2, "allowed", "msg_reply")
+	scopePath := fmt.Sprintf("/api/conversation/group:%d", group.ID)
+	call(3, "GET", scopePath+"/messages", nil, 403)
+	// An obsolete WS read frame has no handler and cannot clear unread state.
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(wsServer.URL, "http")+"?token="+tokens[1], nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(members) != 1 || members[0].UserID != users[1].ID {
-		t.Fatalf("receipts incorrect: %+v", members)
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err = conn.WriteJSON(map[string]any{"cmd": "msg_read", "data": map[string]any{"message_id": "1"}}); err != nil {
+		t.Fatal(err)
 	}
-	call(2, "POST", "/api/message/read", map[string]any{"group_id": group.ID, "message_id": messageID}, 200)
-	laterMessageID := send(2, "later-message", "msg_reply")
-	call(1, "POST", "/api/message/read", map[string]any{"group_id": group.ID, "message_id": messageID}, 200)
+	if err = conn.WriteJSON(map[string]any{"cmd": "ping"}); err != nil {
+		t.Fatal(err)
+	}
+	var reply struct{ Cmd string }
+	if err = conn.ReadJSON(&reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply.Cmd != "pong" {
+		t.Fatalf("obsolete read command responded: %s", reply.Cmd)
+	}
+	var beforeRead struct{ Count int64 }
+	json.Unmarshal(call(1, "GET", "/api/conversation/unread", nil, 200), &beforeRead)
+	if beforeRead.Count != 1 {
+		t.Fatal("obsolete WS read modified conversation unread")
+	}
+	call(1, "POST", scopePath+"/read", nil, 200)
+	send(2, "later-message", "msg_reply")
 	var unread struct {
 		Count int64 `json:"count"`
 	}
-	if err := json.Unmarshal(call(1, "GET", "/api/message/unread", nil, 200), &unread); err != nil {
-		t.Fatal(err)
-	}
+	json.Unmarshal(call(1, "GET", "/api/conversation/unread", nil, 200), &unread)
 	if unread.Count != 1 {
-		t.Fatalf("old cursor cleared later unread: %+v", unread)
+		t.Fatalf("new message count=%d", unread.Count)
 	}
-	call(1, "POST", "/api/message/read", map[string]any{"group_id": group.ID, "message_id": laterMessageID}, 200)
-	call(1, "POST", "/api/message/read", map[string]any{"group_id": group.ID, "message_id": messageID}, 200)
-	if err := json.Unmarshal(call(1, "GET", "/api/message/unread", nil, 200), &unread); err != nil {
-		t.Fatal(err)
-	}
+	call(1, "POST", scopePath+"/read", nil, 200)
+	json.Unmarshal(call(1, "GET", "/api/conversation/unread", nil, 200), &unread)
 	if unread.Count != 0 {
-		t.Fatalf("read cursor moved backwards: %+v", unread)
+		t.Fatal("conversation read did not clear unread")
 	}
 	call(0, "POST", groupPath+"/transfer", map[string]any{"user_id": users[1].ID}, 200)
 	if err := json.Unmarshal(call(1, "GET", groupPath+"/members", nil, 200), &members); err != nil {
@@ -232,7 +242,7 @@ func TestGroupAdministrationHTTPAndWebSocket(t *testing.T) {
 	call(0, "DELETE", groupPath, nil, 403)
 	call(1, "DELETE", fmt.Sprintf("%s/members/%d", groupPath, users[2].ID), nil, 200)
 	send(2, "removed", "error")
-	call(2, "GET", receiptPath, nil, 403)
+	call(2, "GET", scopePath+"/messages", nil, 403)
 	call(1, "DELETE", groupPath, nil, 200)
 	call(1, "GET", groupPath+"/members", nil, 403)
 	send(1, "dissolved", "error")

@@ -1,16 +1,18 @@
 import { ref, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { wsClient } from '../api/ws'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
+import { useConversationStore } from '../stores/conversation'
 
 export function useChat(token) {
   const connected = ref(false)
   const chatStore = useChatStore()
   const userStore = useUserStore()
 
-  const currentChat = chatStore.currentChat
-  const messages = chatStore.currentMessages
-  const unreadMap = chatStore.unreadMap
+  const { currentChat, currentMessages: messages } = storeToRefs(chatStore)
+  const { unreadMap, conversations, currentConversation, conversationError } = storeToRefs(useConversationStore())
+  const { friends, friendMap, myName, myId } = storeToRefs(userStore)
 
   function connect() {
     wsClient.connect(token)
@@ -21,11 +23,11 @@ export function useChat(token) {
   }
 
   function openChat(id, name, type = 'private') {
-    chatStore.openChat(id, name, type)
+    return chatStore.openChat(id, name, type)
   }
 
   function sendMessage(content, msgType = 'text') {
-    chatStore.sendMessage(content, msgType)
+    return chatStore.sendMessage(content, msgType)
   }
 
   onMounted(() => {
@@ -42,10 +44,8 @@ export function useChat(token) {
 
   return {
     connected, currentChat, messages, unreadMap,
-    friends: userStore.friends,
-    friendMap: userStore.friendMap,
-    myName: userStore.myName,
-    myId: userStore.myId,
-    openChat, sendMessage
+    conversations, currentConversation, conversationError,
+    friends, friendMap, myName, myId,
+    openChat, sendMessage, connect, disconnect
   }
 }

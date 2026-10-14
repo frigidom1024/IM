@@ -2,6 +2,7 @@ package sdk_test
 
 import (
 	"context"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"gochat/sdk"
 	"net/http"
@@ -48,7 +49,7 @@ func TestReconnectUsesRefreshedToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.Close()
-	msg, err := ws.Receive()
+	msg, err := receiveExternalMessage(t, ws)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +93,7 @@ func TestConcurrentWebSocketSends(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	msg, err := ws.Receive()
+	msg, err := receiveExternalMessage(t, ws)
 	if err != nil || msg.Cmd != "done" {
 		t.Fatalf("message=%v error=%v", msg, err)
 	}
@@ -142,5 +143,19 @@ func TestCloseCancelsReconnect(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("close did not cancel reconnect")
+	}
+}
+
+func receiveExternalMessage(t *testing.T, ws *sdk.WebSocketClient) (sdk.WSMessage, error) {
+	t.Helper()
+	select {
+	case message, ok := <-ws.Receive():
+		if !ok {
+			return sdk.WSMessage{}, fmt.Errorf("message stream closed")
+		}
+		return message, nil
+	case <-time.After(2 * time.Second):
+		t.Fatal("message stream timed out")
+		return sdk.WSMessage{}, nil
 	}
 }

@@ -2,23 +2,30 @@ package model
 
 import "time"
 
-// ConversationPreference belongs to one viewer, never to the shared scope.
-type ConversationPreference struct {
-	UserID    int64     `gorm:"primaryKey" json:"-"`
-	Scope     string    `gorm:"primaryKey;size:64" json:"id"`
-	Pinned    bool      `json:"pinned"`
-	Muted     bool      `json:"muted"`
-	Draft     string    `gorm:"size:4096" json:"draft"`
-	UpdatedAt time.Time `json:"updated_at"`
+// Conversation is one viewer's state. FromID is its owner, not the last sender.
+type Conversation struct {
+	FromID        int64 `gorm:"primaryKey;autoIncrement:false"`
+	ToID          int64 `gorm:"primaryKey;autoIncrement:false"`
+	GroupID       int64 `gorm:"primaryKey;autoIncrement:false"`
+	LastMessageID *int64
+	LastMessageAt *time.Time
+	UnreadCount   int64 `gorm:"not null;default:0"`
+	ReadAt        *time.Time
+	Pinned        bool   `gorm:"not null;default:false"`
+	Muted         bool   `gorm:"not null;default:false"`
+	Draft         string `gorm:"type:text;not null"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
-func (ConversationPreference) TableName() string { return "conversation_preference" }
+func (Conversation) TableName() string { return "conversation" }
 
-type Conversation struct {
+type ConversationSummary struct {
 	ID             string     `json:"id"`
 	Name           string     `json:"name"`
 	Avatar         string     `json:"avatar"`
 	UnreadCount    int64      `json:"unread_count"`
+	ReadAt         *time.Time `json:"read_at,omitempty"`
 	LastMessage    *Message   `json:"last_message"`
 	LastMessageAt  *time.Time `json:"last_message_at"`
 	Pinned         bool       `json:"pinned"`

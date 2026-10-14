@@ -75,12 +75,7 @@ func TestWebSocketAutomaticHeartbeat(t *testing.T) {
 			t.Fatalf("heartbeat = %#v", event)
 		}
 	}
-	conn, err := ws.connection()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
-	message, err := ws.Receive()
+	message, err := receiveTestMessage(t, ws)
 	if err != nil || message.Cmd != "pong" {
 		t.Fatalf("heartbeat response = %#v, error = %v", message, err)
 	}
@@ -141,7 +136,7 @@ func TestWebSocketHeartbeatContinuesAfterReconnect(t *testing.T) {
 
 func TestWebSocketHeartbeatRecoversFailedWrite(t *testing.T) {
 	ws, events := heartbeatTestClient(t, 10*time.Millisecond)
-	previous, err := ws.connection()
+	previous, err := ws.currentConnection()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +162,7 @@ func TestWebSocketHeartbeatConcurrentWithSend(t *testing.T) {
 		writers.Add(1)
 		go func() {
 			defer writers.Done()
-			if _, err := ws.SendChat(1, 2, 0, "hello", "text"); err != nil {
+			if _, err := ws.SendChat("private:2", "hello", "text"); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -190,7 +185,7 @@ func TestWebSocketHeartbeatConcurrentWithSend(t *testing.T) {
 
 func TestWebSocketConcurrentRecoveryReusesConnection(t *testing.T) {
 	ws, events := heartbeatTestClient(t, 0)
-	previous, err := ws.connection()
+	previous, err := ws.currentConnection()
 	if err != nil {
 		t.Fatal(err)
 	}

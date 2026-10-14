@@ -152,7 +152,7 @@ func (h *UploadHandler) GroupFiles(c *gin.Context) {
 		apierrors.RespondBadRequest(c, "无效群组ID")
 		return
 	}
-	limit, offset, err := parseMessagePage(c)
+	limit, offset, err := parsePage(c)
 	if err != nil {
 		apierrors.RespondBadRequest(c, err.Error())
 		return

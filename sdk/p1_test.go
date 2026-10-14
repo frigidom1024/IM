@@ -63,8 +63,8 @@ func TestGroupManagementContracts(t *testing.T) {
 			io.WriteString(w, `{"code":0,"data":[{"id":7,"announcement":"welcome"}]}`)
 			return
 		}
-		if r.URL.Path == "/api/group/7/messages/90/receipts" || r.Method == "GET" {
-			io.WriteString(w, `{"code":0,"data":[{"user_id":2,"nickname":"A","last_read_message_id":"90","role":0}]}`)
+		if r.Method == "GET" {
+			io.WriteString(w, `{"code":0,"data":[{"user_id":2,"nickname":"A","role":0}]}`)
 			return
 		}
 		if r.Method == "PATCH" {
@@ -97,16 +97,13 @@ func TestGroupManagementContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	members, err := client.ListGroupMembersPage(ctx, 7, 20, 0)
-	if err != nil || members[0].LastReadMessageID != 90 {
+	if err != nil || members[0].Nickname != "A" {
 		t.Fatal(members, err)
-	}
-	if _, err = client.ListGroupReadReceipts(ctx, 7, 90, 20, 0); err != nil {
-		t.Fatal(err)
 	}
 	if err = client.DissolveGroup(ctx, 7); err != nil {
 		t.Fatal(err)
 	}
-	expected := []string{"GET /api/group/search", "POST /api/group/7/invite", "POST /api/group/7/transfer", "PUT /api/group/7/announcement", "PATCH /api/group/7/members/2", "GET /api/group/7/members", "GET /api/group/7/messages/90/receipts", "DELETE /api/group/7"}
+	expected := []string{"GET /api/group/search", "POST /api/group/7/invite", "POST /api/group/7/transfer", "PUT /api/group/7/announcement", "PATCH /api/group/7/members/2", "GET /api/group/7/members", "DELETE /api/group/7"}
 	if len(calls) != len(expected) {
 		t.Fatal(calls)
 	}

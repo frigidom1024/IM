@@ -210,7 +210,7 @@ func (c *Client) ListPrivateMessages(ctx context.Context, userID int64) ([]Messa
 // ListPrivateMessagesPage gets a page of private messages.
 func (c *Client) ListPrivateMessagesPage(ctx context.Context, userID int64, limit int, offset int64) ([]Message, error) {
 	var response []Message
-	path := fmt.Sprintf("/api/message/private/%d?limit=%d&offset=%d", userID, limit, offset)
+	path := fmt.Sprintf("/api/conversation/private:%d/messages?limit=%d&offset=%d", userID, limit, offset)
 	err := c.doAuthenticated(ctx, http.MethodGet, path, nil, &response)
 	return response, err
 }
@@ -223,33 +223,9 @@ func (c *Client) ListGroupMessages(ctx context.Context, groupID int64) ([]Messag
 // ListGroupMessagesPage gets a page of group messages.
 func (c *Client) ListGroupMessagesPage(ctx context.Context, groupID int64, limit int, offset int64) ([]Message, error) {
 	var response []Message
-	path := fmt.Sprintf("/api/message/group/%d?limit=%d&offset=%d", groupID, limit, offset)
+	path := fmt.Sprintf("/api/conversation/group:%d/messages?limit=%d&offset=%d", groupID, limit, offset)
 	err := c.doAuthenticated(ctx, http.MethodGet, path, nil, &response)
 	return response, err
-}
-
-// MarkRead clears private-message unread count from a sender.
-func (c *Client) MarkRead(ctx context.Context, fromID int64) error {
-	return c.MarkReadConversation(ctx, fromID, 0)
-}
-
-// MarkReadConversation clears unread count for one private or group scope.
-func (c *Client) MarkReadConversation(ctx context.Context, fromID, groupID int64) error {
-	return c.doAuthenticated(ctx, http.MethodPost, "/api/message/read", MarkReadRequest{FromID: fromID, GroupID: groupID}, nil)
-}
-
-// GetUnreadCount gets the current user's total unread count.
-func (c *Client) GetUnreadCount(ctx context.Context) (int64, error) {
-	response, err := c.GetUnreadSummary(ctx)
-	return response.Count, err
-}
-
-// GetUnreadSummary gets the total unread count and one summary per private or
-// group scope.
-func (c *Client) GetUnreadSummary(ctx context.Context) (*UnreadCountResponse, error) {
-	var response UnreadCountResponse
-	err := c.doAuthenticated(ctx, http.MethodGet, "/api/message/unread", nil, &response)
-	return &response, err
 }
 
 // Upload uploads a file or media object through the GoChat API.

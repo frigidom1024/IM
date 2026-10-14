@@ -25,13 +25,10 @@ type DisconnectHandler interface {
 	OnDisconnect(ctx context.Context, userID string) error
 }
 
-// MessageService 消息服务接口
-type MessageService interface {
-	Send(msg *model.Message) error
-	SendWithUnread(msg *model.Message, targets []model.UnreadTarget) error
+// MessageSender coordinates persistence and returns committed delivery targets.
+type MessageSender interface {
+	Send(msg *model.Message) ([]int64, error)
 	GetByClientSeq(fromID int64, clientSeq string) (*model.Message, error)
-	GetByID(id int64) (*model.Message, error)
-	IncrUnread(userID, fromID, groupID int64, latestMessage *model.Message) error
 }
 
 // GroupService 群组服务接口
@@ -43,17 +40,6 @@ type GroupService interface {
 type ConnServer interface {
 	Send(userID string, msg Message) error
 	IsOnline(userID string) bool
-}
-
-// UnreadClearer 未读清除接口
-type UnreadClearer interface {
-	ClearUnread(userID string, fromID, groupID int64) error
-}
-
-// OfflineNotifier 离线通知器接口
-type OfflineNotifier interface {
-	HandleUserConnect(userID string, srv ConnServer)
-	ClearUnread(userID string, fromID, groupID int64) error
 }
 
 // ==================== HandlerRegistry ====================

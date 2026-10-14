@@ -76,9 +76,9 @@ func New(cfg *config.Config) (*Application, error) {
 	groupRepo := registry.NewGroupRepository()
 	groupMemberRepo := registry.NewGroupMemberRepository()
 	messageRepo := registry.NewMessageRepository()
-	messageReadRepo := registry.NewMessageReadRepository()
+	conversationRepo := registry.NewConversationRepository()
 
-	messageService := service.NewMessageService(messageRepo, messageReadRepo)
+	messagingService := service.NewMessagingService(messageRepo, conversationRepo)
 	groupService := service.NewGroupService(groupRepo, groupMemberRepo)
 
 	app := &Application{cfg: cfg}
@@ -108,14 +108,14 @@ func New(cfg *config.Config) (*Application, error) {
 			return err
 		}
 	}
-	app.wsServer = newWebSocketServer(messageService, groupService)
+	app.wsServer = newWebSocketServer(messagingService, groupService)
 	app.apiServer = api.NewRouter(
 		userRepo,
 		friendRepo,
 		groupRepo,
 		groupMemberRepo,
 		messageRepo,
-		messageReadRepo,
+		conversationRepo,
 		minioClient,
 		cfg.Auth.Mode,
 		cfg.Auth.ExternalUserAPI,

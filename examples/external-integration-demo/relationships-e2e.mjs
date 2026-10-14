@@ -20,7 +20,7 @@ async function main() {
   let as = new SocketClient(a.token, 'Relation A'), bs = new SocketClient(b.token, 'Relation B');
   await Promise.all([as.opened, bs.opened]);
   async function send(type, content, expected = 'msg_reply', groupID = 0, seq = crypto.randomUUID()) {
-    as.socket.send(JSON.stringify({ cmd: 'msg', seq, data: { from_id: a.user.id, to_id: groupID ? 0 : b.user.id, group_id: groupID, type, content } }));
+    as.socket.send(JSON.stringify({ cmd: 'msg', seq, data: { conversation_id: groupID ? `group:${groupID}` : `private:${b.user.id}`, type, content } }));
     return as.waitFor(msg => msg.seq === seq && msg.cmd === expected);
   }
   const conversationList = async who => (await gochat('/api/conversation', who.token)).data;
@@ -35,8 +35,8 @@ async function main() {
     const introSeq = crypto.randomUUID(); const first = await send('text', '首次问候', 'msg_reply', 0, introSeq);
     // Offline delivery is recovered through durable conversation + unread state.
     bs = new SocketClient(b.token, 'Relation B reconnected'); await bs.opened;
-    const offline = await bs.waitFor(msg => msg.cmd === 'offline_notify');
-    assert(offline.data.unread_list.some(item => item.from_id === a.user.id && (item.count || item.unread_count) === 1), 'offline intro notification missing');
+    const unread = (await gochat('/api/conversation/unread', b.token)).data;
+    assert(unread.unread_list.some(item => item.id === `private:${a.user.id}` && item.unread_count === 1), 'pulled intro notification missing');
     assert((await conversationList(b)).some(item => item.id === `private:${a.user.id}` && item.unread_count === 1), 'nonfriend message hidden');
     assert((await send('text', 'second', 'error')).data.code === 42012, 'second intro accepted');
     await gochat(`/api/friend/${b.user.id}`, a.token, { method: 'DELETE' });
@@ -46,7 +46,7 @@ async function main() {
     assert(retry.data.message_id_string === first.data.message_id_string, 'retry duplicated intro');
     await gochat('/api/friend/add', b.token, json('POST', { friend_id: a.user.id }));
     await send('text', '互加后的消息'); await send('file', '{}');
-    await gochat('/api/message/read', b.token, json('POST', { from_id: a.user.id }));
+    await gochat(`/api/conversation/private:${a.user.id}/read`, b.token, { method: 'POST' });
     assert((await conversationList(b))[0].unread_count === 0, 'read state did not persist');
     console.log('✓ Docker 私信：好友通知与会话分离、离线首次文本、额度限制、重试、重加及互加权限');
 

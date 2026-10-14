@@ -81,12 +81,6 @@ func ParseWsMsg(data []byte) (Message, error) {
 			return nil, err
 		}
 		msg.Data = &d
-	case CmdMsgRead:
-		var d MsgReadData
-		if err := json.Unmarshal(raw.Data, &d); err != nil {
-			return nil, err
-		}
-		msg.Data = &d
 	case CmdAuth:
 		var d AuthData
 		if err := json.Unmarshal(raw.Data, &d); err != nil {

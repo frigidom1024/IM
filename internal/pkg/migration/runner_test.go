@@ -111,7 +111,7 @@ func TestEmptyDatabaseUpgradeAndRepeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := latestStatus(t, r)
-	if s.Version != 5 || s.Dirty || s.SchemaError != "" || len(s.Pending) != 0 {
+	if s.Version != LatestVersion || s.Dirty || s.SchemaError != "" || len(s.Pending) != 0 {
 		t.Fatalf("status = %#v", s)
 	}
 	execSQL(t, r, "INSERT INTO private_pair VALUES (1,2,FALSE,FALSE)")
@@ -160,6 +160,10 @@ INSERT INTO unread_count (user_id,from_id,group_id,count) VALUES (1,2,10,2),(1,3
 		t.Fatal(err)
 	}
 	checks := map[string]int{
+		"SELECT COUNT(*) FROM conversation WHERE group_id=0 AND last_message_id=101":                                      2,
+		"SELECT unread_count FROM conversation WHERE from_id=1 AND to_id=0 AND group_id=10":                               6,
+		"SELECT unread_count FROM conversation WHERE from_id=1 AND to_id=2 AND group_id=0":                                3,
+		"SELECT COUNT(*) FROM conversation WHERE group_id=10 AND last_message_id=103":                                     3,
 		"SELECT unread_count FROM unread_count WHERE user_id=1 AND from_id=0 AND group_id=10":                             6,
 		"SELECT unread_count FROM unread_count WHERE user_id=1 AND from_id=2 AND group_id=0":                              3,
 		"SELECT COUNT(*) FROM unread_count_legacy":                                                                        3,
@@ -176,13 +180,13 @@ INSERT INTO unread_count (user_id,from_id,group_id,count) VALUES (1,2,10,2),(1,3
 			t.Errorf("%s = %d, want %d", query, got, want)
 		}
 	}
-	if s := latestStatus(t, r); s.Version != 5 || s.Dirty || s.SchemaError != "" {
+	if s := latestStatus(t, r); s.Version != LatestVersion || s.Dirty || s.SchemaError != "" {
 		t.Fatalf("upgraded status = %#v", s)
 	}
 }
 
 func TestManualDatabaseBaselineAtEachVersion(t *testing.T) {
-	for version := 0; version <= 5; version++ {
+	for version := 0; version <= LatestVersion; version++ {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			r := testRunner(t)
 			legacy, err := os.ReadFile("testdata/legacy.sql")
@@ -393,7 +397,117 @@ func TestConcurrentUpSerializesInitializationAndUpgrade(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if s := latestStatus(t, r); s.Version != 5 || s.Dirty {
+	if s := latestStatus(t, r); s.Version != LatestVersion || s.Dirty {
 		t.Fatalf("concurrent status = %#v", s)
+	}
+}
+
+func TestConversationMigrationMergesLegacyState(t *testing.T) {
+	r := testRunner(t)
+	applyFile(t, r, "init.sql")
+	for _, path := range []string{"migrations/003_p1_conversations_media.up.sql", "migrations/004_p1_groups.up.sql", "migrations/005_relationships_applications.up.sql"} {
+		applyFile(t, r, path)
+	}
+	execSQL(t, r, `INSERT INTO user (id,username,password) VALUES (1,'one','hash'),(2,'two','hash'),(3,'three','hash'),(4,'four','hash');
+ INSERT INTO `+"`group`"+`(id,name,owner_id) VALUES(10,'team',1),(11,'empty',1);
+ INSERT INTO group_member(group_id,user_id,role,read_at) VALUES(10,1,2,'2026-10-01'),(10,2,0,NULL),(11,1,2,NULL);
+ INSERT INTO message(id,from_id,to_id,group_id,msg_type,content,created_at) VALUES(501,1,2,0,'text','outgoing','2026-10-01'),(502,2,1,0,'text','reply','2026-10-01'),(503,2,0,10,'text','group','2026-10-01');
+ INSERT INTO unread_count(user_id,from_id,group_id,unread_count,read_at) VALUES(1,2,0,7,'2026-09-30'),(2,0,10,4,'2026-09-29');
+ INSERT INTO conversation_preference(user_id,scope,pinned,muted,draft,updated_at) VALUES(1,'private:2',TRUE,TRUE,'keep','2026-10-01'),(1,'private:3',FALSE,FALSE,'empty view','2026-10-01'),(4,'group:10',TRUE,TRUE,'removed preference','2026-10-01');`)
+	if err := r.Baseline(context.Background(), 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Up(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for query, want := range map[string]int{
+		"SELECT COUNT(*) FROM conversation WHERE group_id=0 AND last_message_id=502":                                                   2,
+		"SELECT unread_count FROM conversation WHERE from_id=1 AND to_id=2 AND group_id=0":                                             7,
+		"SELECT COUNT(*) FROM conversation WHERE from_id=1 AND to_id=2 AND pinned AND muted AND draft='keep' AND read_at='2026-09-30'": 1,
+		"SELECT COUNT(*) FROM conversation WHERE group_id=10 AND last_message_id=503":                                                  3,
+		"SELECT COUNT(*) FROM conversation WHERE from_id=1 AND group_id=10 AND read_at='2026-10-01'":                                   1,
+		"SELECT unread_count FROM conversation WHERE from_id=2 AND group_id=10":                                                        4,
+		"SELECT COUNT(*) FROM conversation WHERE from_id=4 AND group_id=10 AND unread_count=0 AND draft='removed preference'":          1,
+		"SELECT COUNT(*) FROM conversation WHERE from_id=1 AND to_id=3 AND last_message_id IS NULL AND draft='empty view'":             1,
+		"SELECT COUNT(*) FROM conversation WHERE group_id=11":                                                                          0,
+		"SELECT COUNT(*) FROM conversation_preference":                                                                                 3,
+		"SELECT COUNT(*) FROM unread_count":                                                                                            2,
+		"SELECT COUNT(*) FROM message":                                                                                                 3,
+	} {
+		if got := scalar(t, r, query); got != want {
+			t.Errorf("%s=%d want %d", query, got, want)
+		}
+	}
+}
+
+func TestConversationDirtyRepairAfterManualBackfill(t *testing.T) {
+	r := testRunner(t)
+	applyFile(t, r, "init.sql")
+	for _, path := range []string{"migrations/003_p1_conversations_media.up.sql", "migrations/004_p1_groups.up.sql", "migrations/005_relationships_applications.up.sql"} {
+		applyFile(t, r, path)
+	}
+	execSQL(t, r, "INSERT INTO message(id,from_id,to_id,msg_type,content) VALUES(601,1,2,'text','keep')")
+	if err := r.Baseline(context.Background(), 5); err != nil {
+		t.Fatal(err)
+	}
+	files := copiedScripts(t, r)
+	path := "migrations/006_conversations.up.sql"
+	body := string(files[path].Data)
+	start := strings.Index(body, "INSERT INTO conversation")
+	files[path] = &fstest.MapFile{Data: []byte(body[:start] + "SELECT * FROM deliberately_missing_table;")}
+	r.scripts = files
+	if err := r.Up(context.Background()); err == nil {
+		t.Fatal("injected failure succeeded")
+	}
+	if s := latestStatus(t, r); s.Version != 6 || !s.Dirty {
+		t.Fatal(s)
+	}
+	if err := r.Up(context.Background()); err == nil {
+		t.Fatal("dirty up continued")
+	}
+	if err := r.Baseline(context.Background(), 6); err == nil {
+		t.Fatal("baseline repaired dirty")
+	}
+	execSQL(t, r, body[start:]) // Operator completes the remaining data statements.
+	if err := r.Repair(context.Background(), 6); err != nil {
+		t.Fatal(err)
+	}
+	r.scripts = New(r.db).scripts
+	if err := r.Up(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if scalar(t, r, "SELECT COUNT(*) FROM conversation WHERE last_message_id=601") != 2 {
+		t.Fatal("manual backfill missing")
+	}
+	if s := latestStatus(t, r); s.Dirty || s.Version != 6 {
+		t.Fatal(s)
+	}
+}
+
+func TestConversationSchemaAndScopeConstraints(t *testing.T) {
+	r := testRunner(t)
+	if err := r.Up(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, values := range []string{"(1,1,0,'')", "(1,2,3,'')", "(0,2,0,'')", "(1,0,0,'')"} {
+		if _, err := r.db.Exec("INSERT INTO conversation(from_id,to_id,group_id,draft) VALUES " + values); err == nil {
+			t.Fatal("invalid scope accepted: " + values)
+		}
+	}
+	execSQL(t, r, "ALTER TABLE conversation MODIFY draft TEXT NULL")
+	if s := latestStatus(t, r); s.SchemaError == "" {
+		t.Fatal("nullable conversation draft accepted")
+	}
+	execSQL(t, r, "ALTER TABLE conversation MODIFY draft TEXT NOT NULL")
+	execSQL(t, r, "ALTER TABLE conversation DROP INDEX idx_conversation_owner_latest")
+	if s := latestStatus(t, r); s.SchemaError == "" {
+		t.Fatal("missing conversation index accepted")
+	}
+	if err := r.Up(context.Background()); err == nil {
+		t.Fatal("incompatible registered schema upgraded")
+	}
+	execSQL(t, r, "DELETE FROM "+VersionTable)
+	if err := r.Baseline(context.Background(), 6); err == nil {
+		t.Fatal("incompatible conversation baseline accepted")
 	}
 }

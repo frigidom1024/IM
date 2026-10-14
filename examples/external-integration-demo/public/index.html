@@ -43,7 +43,7 @@
       <h2>2. WebSocket 状态</h2>
       <div class="status"><span id="ws-dot" class="dot"></span><span id="ws-state">未连接</span></div>
       <label for="target">接收方 GoChat 用户 ID</label>
-      <input id="target" type="number" placeholder="在另一个用户会话中查看 ID" />
+      <input id="target" type="text" inputmode="numeric" placeholder="在另一个用户会话中查看 ID" />
       <label for="message" style="margin-top:10px">消息</label>
       <input id="message" value="来自外部集成项目的消息" />
       <button id="send" disabled>发送消息</button>
@@ -82,11 +82,23 @@
     function connectWebSocket() {
       if (socket) socket.close();
       socket = new WebSocket(`${GOCHAT_WS}?token=${encodeURIComponent(gochatToken)}`);
-      socket.addEventListener('open', () => {
+      const connectingSocket = socket; const auth = gochatToken;
+      socket.addEventListener('open', async () => {
         $('ws-dot').classList.add('ok');
         $('ws-state').textContent = '已连接';
         $('send').disabled = false;
         log('WebSocket 已连接');
+        try {
+          const [conversations, unread, notices] = await Promise.all([
+            request('/api/conversation', { headers: { Authorization: `Bearer ${auth}` } }),
+            request('/api/conversation/unread', { headers: { Authorization: `Bearer ${auth}` } }),
+            request('/api/friend/incoming', { headers: { Authorization: `Bearer ${auth}` } })
+          ]);
+          if (socket !== connectingSocket || gochatToken !== auth) return;
+          log('主动获取会话', conversations.data);
+          log('主动获取未读汇总', unread.data);
+          log('主动获取好友通知', notices.data);
+        } catch (error) { log(`通知获取失败：${error.message}`); }
       });
       socket.addEventListener('message', (event) => log('收到 WebSocket 消息', JSON.parse(event.data)));
       socket.addEventListener('close', () => {
@@ -121,13 +133,13 @@
     });
 
     $('send').addEventListener('click', () => {
-      const target = Number($('target').value);
+      const target = $('target').value.trim();
       const content = $('message').value.trim();
-      if (!target || !content || !socket || socket.readyState !== WebSocket.OPEN) return;
+      if (!/^[1-9][0-9]{0,18}$/.test(target) || BigInt(target) > 9223372036854775807n || !content || !socket || socket.readyState !== WebSocket.OPEN) return;
       const packet = {
         cmd: 'msg',
-        seq: `browser-${Date.now()}`,
-        data: { from_id: currentUser.id, to_id: target, type: 'text', content }
+        seq: crypto.randomUUID(),
+        data: { conversation_id: `private:${target}`, type: 'text', content }
       };
       socket.send(JSON.stringify(packet));
       log('发送 WebSocket 消息', packet);

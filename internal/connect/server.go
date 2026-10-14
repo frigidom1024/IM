@@ -260,12 +260,6 @@ func (s *WsConnServer) RunWithServeMux(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(prefix+"/ws", s.HandleWebSocket)
 }
 
-// SendOfflineNotify 发送离线通知给用户
-func (s *WsConnServer) SendOfflineNotify(userID string, notifyData *OfflineNotifyData) error {
-	notifyMsg := NewRawMessage(CmdOfflineNotify, "", notifyData)
-	return s.Send(userID, notifyMsg)
-}
-
 // Close 关闭连接
 func (c *wsConnection) Close() error {
 	var err error

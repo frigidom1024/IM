@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -44,7 +43,7 @@ func TestWebSocketReceiveReconnectsAfterDisconnect(t *testing.T) {
 	}
 	defer connection.Close()
 
-	message, err := connection.Receive()
+	message, err := receiveTestMessage(t, connection)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,5 +54,4 @@ func TestWebSocketReceiveReconnectsAfterDisconnect(t *testing.T) {
 		t.Fatalf("connections = %d, want 2", connections.Load())
 	}
 
-	_ = time.Second // keep the test's timeout vocabulary explicit for future extensions
 }

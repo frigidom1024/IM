@@ -68,16 +68,14 @@ func TestWebSocketMetricsReflectAuthenticationAndConnectionLifecycle(t *testing.
 
 type messageStore struct{}
 
-func (messageStore) Send(*model.Message) error { return nil }
-func (messageStore) SendWithUnread(m *model.Message, _ []model.UnreadTarget) error {
+func (messageStore) Send(m *model.Message) ([]int64, error) {
 	if m.Content == "fail" {
-		return errors.New("storage unavailable")
+		return nil, errors.New("storage unavailable")
 	}
-	return nil
+	return []int64{m.ToID}, nil
 }
 func (messageStore) GetByClientSeq(int64, string) (*model.Message, error) { return nil, nil }
 func (messageStore) GetByID(int64) (*model.Message, error)                { return nil, nil }
-func (messageStore) IncrUnread(int64, int64, int64, *model.Message) error { return nil }
 
 func TestWebSocketMetricsCountPersistenceOutcomes(t *testing.T) {
 	metric := func(result string) int {
@@ -110,7 +108,7 @@ func TestWebSocketMetricsCountPersistenceOutcomes(t *testing.T) {
 	}
 	defer conn.Close()
 	for _, content := range []string{"ok", "fail"} {
-		data, _ := connect.NewRawMessage(connect.CmdMsg, content, &connect.ChatMsgData{FromID: 42, ToID: 8, Type: model.MsgTypeText, Content: content}).ToJSON()
+		data, _ := connect.NewRawMessage(connect.CmdMsg, content, &connect.ChatMsgData{ConversationID: "private:8", Type: model.MsgTypeText, Content: content}).ToJSON()
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			t.Fatal(err)
 		}
